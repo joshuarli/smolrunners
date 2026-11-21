@@ -142,6 +142,10 @@ rm -f /tmp/.docker/config.json
 [ -z "$(docker volume ls -q)" ] || fail 'volumes survived the drain'
 docker_dev=$(awk '$2 == "/var/lib/docker" {print $1}' /proc/mounts)
 [ -n "$docker_dev" ] || fail 'cannot resolve the docker data-root device'
+dev_name=${docker_dev##*/}
+dev_major=$(awk -v name="$dev_name" '$4 == name {print $1}' /proc/partitions | head -1)
+dev_minor=$(awk -v name="$dev_name" '$4 == name {print $2}' /proc/partitions | head -1)
+case "$dev_major$dev_minor" in ''|*[!0-9]*) fail "cannot resolve the data-root device numbers for $dev_name" ;; esac
 stop_daemon
 pkill -f 'containerd --config' 2>/dev/null || true
 sleep 2
@@ -187,6 +191,7 @@ c current --repo acme/widgets | grep -q "\"generation\":\"$generation\"" || fail
 c inspect --gen "$generation" | grep -q '"state":"published"' || fail 'generation was not published'
 
 note 'remount a wiped data root and start a fresh daemon'
+[ -e "$docker_dev" ] || mknod "$docker_dev" b "$dev_major" "$dev_minor" || true
 mount "$docker_dev" /var/lib/docker || fail 'data root remount failed'
 find /var/lib/docker -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
 start_daemon wipe
