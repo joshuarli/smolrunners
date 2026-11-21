@@ -15,6 +15,7 @@ fn main() -> ExitCode {
         Some("host") if !matches!(args.get(2).map(String::as_str), Some("invite" | "join")) => {
             host::run(&args[2..])
         }
+        Some("doctor") => host::doctor(&args[2..]),
         Some("--version" | "-V") => {
             println!("smolrunners {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
