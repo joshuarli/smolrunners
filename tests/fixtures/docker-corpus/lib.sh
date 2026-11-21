@@ -18,7 +18,7 @@ wait_for() {
     i=$((i + 1))
     sleep 1
   done
-  fail "timeout waiting for $label: $(tail -20 /work/dockerd.log 2>/dev/null)"
+  fail "timeout waiting for $label"
 }
 daemon_env() {
   export HOME=/tmp
@@ -49,9 +49,7 @@ start_daemon() {
     --exec-opt native.cgroupdriver=cgroupfs --storage-driver=vfs \
     --iptables=false --ip6tables=false --insecure-registry=127.0.0.0/8 \
     > /work/dockerd.log 2>&1 &
-  if ! wait_for dockerd docker info; then
-    fail "dockerd did not become ready: $(tail -20 /work/dockerd.log)"
-  fi
+  wait_for dockerd docker info
   kill -0 "$(cat /work/dockerd.pid)" >/dev/null 2>&1 || \
     fail "dockerd exited during startup: $(tail -10 /work/dockerd.log)"
 }
