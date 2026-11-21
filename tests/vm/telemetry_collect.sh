@@ -82,7 +82,7 @@ exec_in_guest \
     dockerd --data-root=/work/docker --exec-root=/work/docker-exec \
       --host=unix:///var/run/docker.sock --pidfile=/work/docker.pid \
       --cgroup-parent=smolrunners-workload.slice --exec-opt native.cgroupdriver=cgroupfs \
-      --storage-driver=vfs --feature containerd-snapshotter=false \
+      --storage-driver=vfs \
       --iptables=false --ip6tables=false > /work/dockerd.log 2>&1 &
     ready=0
     attempt=0
