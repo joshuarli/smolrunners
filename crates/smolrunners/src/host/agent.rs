@@ -3,7 +3,7 @@ use crate::host::marker::{self, Marker, Phase};
 use crate::host::smolvm::{self, Smolvm};
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{chown, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -42,6 +42,8 @@ pub fn prepare_state(config: &Config) -> Result<(), String> {
             .map_err(|error| format!("create {}: {error}", directory.display()))?;
         fs::set_permissions(&directory, fs::Permissions::from_mode(0o777))
             .map_err(|error| format!("permit {}: {error}", directory.display()))?;
+        chown(&directory, Some(config.uid), Some(config.uid))
+            .map_err(|error| format!("chown {}: {error}", directory.display()))?;
     }
     Ok(())
 }
@@ -55,7 +57,7 @@ fn remove_cgroup(path: &str) {
 
 fn teardown(config: &Config, marker: &Marker) -> Result<(), String> {
     let smolvm = Smolvm::new(config);
-    match smolvm.raw(&["machine", "stop", "--name", &marker.machine], None) {
+    match smolvm.raw(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup)) {
         Ok(output) if output.status.success() => {}
         Ok(output) => {
             let error = smolvm::parse_failure(&output);
@@ -68,7 +70,10 @@ fn teardown(config: &Config, marker: &Marker) -> Result<(), String> {
         }
         Err(error) => return Err(error),
     }
-    match smolvm.raw(&["machine", "delete", "--name", &marker.machine, "-f"], None) {
+    match smolvm.raw(
+        &["machine", "delete", "--name", &marker.machine, "-f"],
+        Some(&marker.cgroup),
+    ) {
         Ok(output) if output.status.success() => {}
         Ok(output) => {
             let error = smolvm::parse_failure(&output);
@@ -150,6 +155,7 @@ pub fn provision(
             &marker.machine,
             "-I",
             image,
+            "--block-private",
             "--cpus",
             &cpus.to_string(),
             "--mem",

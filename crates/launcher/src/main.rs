@@ -77,7 +77,6 @@ fn main() {
     if let Some(value) = pids_max {
         write_limit(directory, "pids.max", &value);
     }
-    write_limit(directory, "net.allow", &net_allow);
     write_limit(
         directory,
         "cgroup.procs",

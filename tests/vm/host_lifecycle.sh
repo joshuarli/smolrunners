@@ -23,8 +23,10 @@ leftovers() {
 }
 
 host() {
-  "$agent" --state-dir "$state" --runtime-dir "$runtime" --launcher "$launcher" "$@"
+  "$agent" host --state-dir "$state" --runtime-dir "$runtime" --launcher "$launcher" "$@"
 }
+
+base_args="--state-dir $state --runtime-dir $runtime --launcher $launcher"
 
 background_pids=''
 cleanup() {
@@ -107,6 +109,9 @@ assert_clean() {
 
 rm -rf "$state"
 mkdir -p "$state"
+for stale in /sys/fs/cgroup/sr-*; do
+  [ -d "$stale" ] && rmdir "$stale" 2>/dev/null || true
+done
 
 printf 'host_lifecycle: checking environment sanitization\n'
 environment="$(SMOLRUNNERS_TOKEN=leak GITHUB_TOKEN=leak ACTIONS_SECRET=leak SR_POLICY=leak \
@@ -119,10 +124,10 @@ printf '%s\n' "$environment" | grep -q "^SMOLVM_AGENT_ROOTFS=$runtime/agent-root
   || fail "SMOLVM_AGENT_ROOTFS missing from sanitized environment"
 
 printf 'host_lifecycle: booting two concurrent guests\n'
-host --uid 60000 provision --name first --image "$image" >"$state/first.log" 2>&1 &
+"$agent" host $base_args --uid 60000 provision --name first --image "$image" >"$state/first.log" 2>&1 &
 first_pid=$!
 background_pids="$background_pids $first_pid"
-host --uid 60000 provision --name second --image "$image" >"$state/second.log" 2>&1 &
+"$agent" host $base_args --uid 60000 provision --name second --image "$image" >"$state/second.log" 2>&1 &
 second_pid=$!
 background_pids="$background_pids $second_pid"
 
@@ -153,8 +158,8 @@ wait_for_gone "$second_name"
 assert_clean
 
 printf 'host_lifecycle: kill -9 mid-boot and reap on restart\n'
-host --uid 60000 --hold-after-create-ms 30000 provision --name crash --image "$image" \
-  >"$state/crash.log" 2>&1 &
+"$agent" host $base_args --uid 60000 --hold-after-create-ms 30000 provision --name crash \
+  --image "$image" >"$state/crash.log" 2>&1 &
 crash_pid=$!
 background_pids="$background_pids $crash_pid"
 wait_for_claim "$state/crash.log"
