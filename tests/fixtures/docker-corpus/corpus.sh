@@ -102,10 +102,23 @@ docker rm -f sr-corpus-ryuk >/dev/null
 note 'item 6: Testcontainers ryuk reaped the labeled canary container after client disconnect'
 
 note 'item 7: privileged docker:dind service with an inner daemon'
-docker pull -q docker:dind >/dev/null
+dind_build=$(mktemp -d /work/dind-build.XXXXXX)
+for binary in dockerd docker containerd ctr runc docker-init; do
+  cp "/usr/local/bin/$binary" "$dind_build/$binary" || \
+    fail "missing pinned binary for the local dind image: $binary"
+done
+cat > "$dind_build/Dockerfile" <<'EOF'
+FROM alpine:3.24
+COPY dockerd docker containerd ctr runc docker-init /usr/local/bin/
+RUN mkdir -p /var/lib/docker /run/containerd
+ENTRYPOINT ["dockerd"]
+CMD ["--iptables=false","--ip6tables=false","--bridge=none","--storage-driver=vfs"]
+EOF
+DOCKER_BUILDKIT=1 docker buildx build --builder default -q -t sr-corpus/dind "$dind_build" \
+  > /work/dind-build.log 2>&1 || \
+  fail "local dind image build failed: $(tail -10 /work/dind-build.log)"
 docker rm -f sr-corpus-dind >/dev/null 2>&1 || true
-docker run -d --privileged --name sr-corpus-dind -e DOCKER_TLS_CERTDIR= \
-  docker:dind --iptables=false --ip6tables=false --bridge=none --storage-driver=vfs \
+docker run -d --privileged --name sr-corpus-dind sr-corpus/dind \
   > /work/dind-create.log 2>&1 || \
   fail "dind container did not start: $(tail -10 /work/dind-create.log)"
 ready=0
