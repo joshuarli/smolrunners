@@ -68,13 +68,11 @@ up() {
 }
 
 sync() {
-  guest -- sh -eu -c '
-    git config --global --add safe.directory /mnt/repo
-    mkdir -p /work/smolrunners/.work/tmp
-    test -d /work/smolrunners/.git || git -C /work/smolrunners init -q
-    cd /mnt/repo
-    git ls-files -z --cached --others --exclude-standard --deduplicate | tar --null -T - --ignore-failed-read -cf - 2>/dev/null | tar -C /work/smolrunners -xf -
-  '
+  archive="$state/smolrunners-tree.tar"
+  ( cd "$repo" && git ls-files -z --cached --others --exclude-standard --deduplicate |
+      tar --no-xattrs --null -T - -cf - ) > "$archive"
+  native machine cp "$archive" "$machine:/work/tmp/smolrunners-tree.tar"
+  guest -- sh -eu -c 'mkdir -p /work/smolrunners/.work/tmp && tar -C /work/smolrunners -xf /work/tmp/smolrunners-tree.tar && rm -f /work/tmp/smolrunners-tree.tar'
 }
 
 case "${1:-}" in
