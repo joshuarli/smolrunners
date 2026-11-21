@@ -3,9 +3,9 @@
 ## Status
 
 - **Goal:** build smolrunners, a self-hosted fleet manager that runs each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical CPU, RAM, storage and lifecycle telemetry. The goal for this campaign is every local deliverable below, accepted on the nested Linux host. Live GitHub proof and native-hardware proof are listed under **Needs environment**.
-- **Last accepted revision:** `4e2c7e9` (L1).
-- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1, R1, W1, E1, I2, L1. **Red:** none. **Parked:** none.
-- **Next slice:** `D2` and `L2` are in flight; P2 begins when both clear.
+- **Last accepted revision:** `aa4c484` (L2 reversal and parked acceptance).
+- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1, R1, W1, E1, I2, L1. **Red:** none. **Parked:** `L2` — the D13 spike reversed after its bound: the published musl runner needs unpinned musl C++ runtime, ICU and musl Node inputs; retry after `sources.lock.json` pins them. Evidence and retry condition are in `docs/compatibility.md`.
+- **Next slice:** `D2` is in flight; P2 begins when it clears. The parked L2 does not block local gates because native-Alpine labels stay unadvertised.
 - **Resume prompt:** `Execute ~/repos/smolrunners/smolrunners-campaign.md from Status`. First command: run the parent steering checkpoint, integrate any finished lane, then launch the next ready P1 lanes.
 
 ## Charter
