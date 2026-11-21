@@ -59,15 +59,36 @@ pub fn cpu_jiffies() -> CpuJiffies {
     result
 }
 
+fn is_per_cpu_name(name: &str) -> bool {
+    name.strip_prefix("cpu")
+        .is_some_and(|suffix| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
+}
+
 pub fn cpu_count() -> usize {
     let text = fs::read_to_string("/proc/stat").unwrap_or_default();
     text.lines()
         .filter(|line| {
-            let mut fields = line.split_whitespace();
-            matches!(fields.next(), Some(name) if name.starts_with("cpu") && name[3..].chars().all(|c| c.is_ascii_digit()))
+            line.split_whitespace()
+                .next()
+                .is_some_and(is_per_cpu_name)
         })
         .count()
         .max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_per_cpu_name;
+
+    #[test]
+    fn collector_cpu_count_ignores_the_aggregate_line() {
+        assert!(!is_per_cpu_name("cpu"));
+        assert!(is_per_cpu_name("cpu0"));
+        assert!(is_per_cpu_name("cpu17"));
+        assert!(!is_per_cpu_name("cpu0a"));
+        assert!(!is_per_cpu_name("cpufreq"));
+        assert!(!is_per_cpu_name("intr"));
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
