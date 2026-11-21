@@ -177,6 +177,7 @@ second=$(samples)
 printf 'connected_job: live telemetry changed during execution (%s -> %s samples)\n' "$first" "$second"
 
 printf 'connected_job: killing the coordinator mid-execution\n'
+pre_restart=$(samples)
 kill -9 "$coord_pid"
 wait "$coord_pid" 2>/dev/null || true
 coord_pid=''
@@ -187,10 +188,15 @@ guest_smolvm "machine status --name $machine >/dev/null 2>&1" || fail "the owned
 printf 'connected_job: restarting the coordinator from durable state\n'
 start_coordinator
 wait_for 'REATTACH job=job-connected-a ' 120 || fail 'coordinator did not reattach to the running execution'
-third=$(samples)
-sleep 4
-fourth=$(samples)
-[ "$fourth" -gt "$third" ] || fail "telemetry did not resume after restart ($third -> $fourth)"
+fourth=$pre_restart
+attempt=0
+while [ "$attempt" -lt 60 ] && [ "$fourth" -le "$pre_restart" ]; do
+  sleep 0.25
+  fourth=$(samples)
+  attempt=$((attempt + 1))
+done
+[ "$fourth" -gt "$pre_restart" ] || fail "telemetry did not resume after restart ($pre_restart -> $fourth)"
+printf 'connected_job: telemetry resumed after restart (%s -> %s samples)\n' "$pre_restart" "$fourth"
 wait_for 'TEARDOWN machine=' 180 || fail 'coordinator did not tear down the same execution'
 wait_for 'RELEASE job=job-connected-a ' 60 || fail 'coordinator did not release capacity'
 wait_for 'JOB_DONE job=job-connected-a ' 60 || fail 'execution a did not finish'
