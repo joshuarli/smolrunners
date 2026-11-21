@@ -22,5 +22,7 @@ laputa-async-io.workspace = true
 laputa-async-net.workspace = true
 rustls = { workspace = true, default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pemfile.workspace = true
-rcgen.workspace = true
 x509-parser = "0.18"
+
+[dev-dependencies]
+rcgen.workspace = true
