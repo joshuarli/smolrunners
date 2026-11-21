@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "image": "alpine324",
+  "arch": "arm64",
+  "base_digest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+  "alpine_release": "3.24.4",
+  "docker": "29.9.3",
+  "containerd": "v2.4.2",
+  "runc": "1.5.2",
+  "buildx": "v0.39.1",
+  "compose": "5.8.0",
+  "collector": "placeholder:tests/vm/bin/smolrunners-collector"
+}

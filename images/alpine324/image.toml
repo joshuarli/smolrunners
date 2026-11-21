@@ -1,0 +1,19 @@
+name = "alpine324"
+arch = "arm64"
+recipe = "build.sh"
+
+[base]
+image = "alpine"
+digest = "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf"
+release = "3.24"
+
+[inputs]
+docker = "docker-static-aarch64"
+buildx = "buildx-linux-arm64"
+compose = "compose-linux-arm64"
+collector = "tests/vm/bin/smolrunners-collector"
+
+[layout]
+docker_bin_dir = "/usr/local/bin"
+buildx_plugin_dir = "/usr/local/lib/docker/cli-plugins"
+smolrunners_dir = "/opt/smolrunners"
