@@ -267,7 +267,7 @@ Each deliverable is local and passes on the integrated tree. Distinct success an
 | Shared capacity | `cargo test -p smolrunners-core ledger` | No resource is promised twice. Large-profile wait stays within `max_wait`. | Starvation or a double promise |
 | Docker inside the VM | `make test-vm T=image_docker` | Containers are actually created and built, including the inner `docker:dind`, and identical service ports do not conflict. | `docker info`-only evidence |
 | Live and historical metrics | `make test-vm T=telemetry_history` | Phases appear. Gaps are distinct from zero. Restart and outage preserve labels. Units show cores used and percent of allocated vCPUs. | Rates computed from receipt time, or interpolation across a gap |
-| Long jobs | `make test-vm T=telemetry_long` (a 95-minute fixture job, run once at the P1 milestone) | Full coverage or explicit gaps. | A sample-count cutoff |
+| Long jobs | `make test-vm T=telemetry_long` (120 s default for the suite); the one-time 95-minute gate is `sh scripts/linux-host.sh exec 'sh tests/vm/telemetry_long.sh 5700'` | Full coverage or explicit gaps. | A sample-count cutoff |
 | Sizing | `make test-vm T=sizing_trial` | The recommendation includes comparable runs and a reproducible trial. | A recommendation from mean utilization alone |
 | Cache authority and lifetime | `make test-vm T=cache_generations` | All D1 conditions hold. | Cross-repository or cross-trust read or write, or GC of an active generation |
 | Operator surface | `make test-vm T=cli_e2e`, plus the W1 browser check | The CLI and the web show identical facts. | Disagreement between the CLI and the web |

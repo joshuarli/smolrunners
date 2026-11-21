@@ -5,7 +5,7 @@ repo=/work/smolrunners
 runtime=/opt/runtime
 state=/work/tmp/telemetry-long-state
 machine=sr-telemetry-long
-seconds=${1:-5700}
+seconds=${1:-120}
 cap=$((seconds * 2 + 10000))
 
 fail() { printf 'telemetry_long: %s\n' "$*" >&2; exit 1; }
