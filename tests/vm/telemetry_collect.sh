@@ -91,7 +91,7 @@ exec_in_guest \
       attempt=$((attempt + 1))
       sleep 1
     done
-    [ "$ready" -eq 1 ] || { echo 'docker daemon did not become ready' >&2; tail -20 /work/dockerd.log >&2; exit 1; }
+    [ "$ready" -eq 1 ] || { echo "docker daemon did not become ready" >&2; tail -20 /work/dockerd.log >&2; exit 1; }
     tar -C /alpine-root -cf - . | docker import \
       --change "CMD [\"/bin/sleep\",\"3600\"]" - nginx:alpine > /dev/null
   ' > "$state/docker.log" 2>&1 || fail "docker setup failed: $(tail -5 "$state/docker.log")"
