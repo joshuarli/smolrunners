@@ -198,7 +198,7 @@ fn lifecycle_consumes_every_frame_kind() {
             id: "evt-started".to_owned(),
             request_id: request(22),
             job_id: job("job-kinds"),
-            runner_name,
+            runner_name: Some(runner_name),
         },
         Frame::JobCompleted {
             schema_version: SCHEMA_VERSION,

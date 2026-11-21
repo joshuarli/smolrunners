@@ -46,13 +46,15 @@ pub enum Frame {
         id: String,
         request_id: RunnerRequestId,
         job_id: ProtocolJobId,
-        runner_name: RunnerName,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runner_name: Option<RunnerName>,
     },
     JobCompleted {
         schema_version: u32,
         id: String,
         request_id: RunnerRequestId,
         job_id: ProtocolJobId,
+        #[serde(default)]
         result: String,
     },
     AcquireOutcome {
@@ -249,6 +251,27 @@ mod tests {
 
     fn golden_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../adapter/testdata/frames")
+    }
+
+    fn framed(json: &str) -> Vec<u8> {
+        let mut bytes = (json.len() as u32).to_be_bytes().to_vec();
+        bytes.extend_from_slice(json.as_bytes());
+        bytes
+    }
+
+    #[test]
+    fn proto_accepts_frames_without_optional_sdk_fields() {
+        for json in [
+            r#"{"kind":"job_started","schema_version":1,"id":"e1","request_id":1,"job_id":"j1"}"#,
+            r#"{"kind":"job_completed","schema_version":1,"id":"e2","request_id":1,"job_id":"j1"}"#,
+        ] {
+            let frame = decode(&framed(json)).unwrap_or_else(|error| panic!("{json}: {error}"));
+            match frame {
+                Frame::JobStarted { runner_name, .. } => assert_eq!(runner_name, None),
+                Frame::JobCompleted { result, .. } => assert_eq!(result, ""),
+                other => panic!("wrong frame kind: {}", other.kind()),
+            }
+        }
     }
 
     #[test]

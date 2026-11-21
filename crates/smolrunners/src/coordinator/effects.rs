@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -26,6 +26,7 @@ use super::{
 
 pub(crate) struct Sampler {
     pub(crate) child: Child,
+    pub(crate) samples: Arc<AtomicU64>,
     stop: Arc<AtomicBool>,
 }
 
@@ -406,6 +407,8 @@ pub(crate) fn start_sampling(
     let stdout = child.stdout.take().ok_or("collector stdout unavailable")?;
     let stop = Arc::new(AtomicBool::new(false));
     let thread_stop = stop.clone();
+    let samples = Arc::new(AtomicU64::new(0));
+    let thread_samples = samples.clone();
     let attempt = job.execution_attempt_id;
     let host_id = job.host_id;
     let audit_log = audit_log.to_path_buf();
@@ -454,12 +457,13 @@ pub(crate) fn start_sampling(
                 continue;
             }
             count += 1;
+            thread_samples.fetch_add(1, Ordering::Relaxed);
             if count % 10 == 0 {
                 audit(&audit_log, &format!("TELEMETRY attempt={attempt} samples={count}"));
             }
         }
     });
-    Ok(Sampler { child, stop })
+    Ok(Sampler { child, stop, samples })
 }
 
 pub(crate) fn run_workload(config: &Config, job: &JobRuntime, audit_log: &Path) -> Result<(), String> {

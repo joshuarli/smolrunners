@@ -7,9 +7,10 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use smolrunners_core::lifecycle::{ExecutionState, Lifecycle, SubmitOutcome, Submitted};
@@ -231,32 +232,7 @@ fn read_frame<R: Read>(reader: &mut R) -> Result<Frame, String> {
     reader
         .read_exact(&mut body)
         .map_err(|error| format!("read frame body: {error}"))?;
-    let mut value: serde_json::Value = serde_json::from_slice(&body).map_err(|error| {
-        format!(
-            "decode adapter frame: {error}; length={length}; body={}",
-            String::from_utf8_lossy(&body)
-        )
-    })?;
-    if let Some(fields) = value.as_object_mut() {
-        match fields.get("kind").and_then(serde_json::Value::as_str) {
-            Some("job_completed") => {
-                fields
-                    .entry("result")
-                    .or_insert_with(|| serde_json::Value::String(String::new()));
-            }
-            Some("job_started") => {
-                fields
-                    .entry("runner_name")
-                    .or_insert_with(|| serde_json::Value::String("sr-runner".to_owned()));
-            }
-            _ => {}
-        }
-    }
-    let body = serde_json::to_vec(&value)
-        .map_err(|error| format!("encode adapter frame: {error}"))?;
-    let mut normalized = (body.len() as u32).to_be_bytes().to_vec();
-    normalized.extend(body);
-    proto::decode(&normalized).map_err(|error| error.to_string())
+    proto::decode(&body).map_err(|error| error.to_string())
 }
 
 fn quote(value: &str) -> String {
@@ -670,12 +646,27 @@ impl Supervisor {
                 }
             }
             Frame::JobAssigned { .. } if submitted.replayed => {
+                let key = job_id.as_deref().unwrap_or("unknown");
+                let deadline = Instant::now() + Duration::from_secs(20);
+                let mut observed = 0u64;
+                while Instant::now() < deadline {
+                    observed = self
+                        .samplers
+                        .get(key)
+                        .map(|sampler| sampler.samples.load(Ordering::Relaxed))
+                        .unwrap_or(0);
+                    if observed >= 2 {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
                 audit(
                     &self.audit_log,
-                    &format!("RESUME_WAIT job={} reason=coordinator_restart",
-                        job_id.as_deref().unwrap_or("unknown")),
+                    &format!(
+                        "RESUME_WAIT job={key} reason=coordinator_restart samples={observed} ready={}",
+                        observed >= 2
+                    ),
                 );
-                thread::sleep(Duration::from_secs(8));
             }
             Frame::JobAssigned { .. } if !submitted.replayed => {
                 let key = job_id.clone().ok_or("assignment has no job id")?;
