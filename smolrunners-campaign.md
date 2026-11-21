@@ -3,9 +3,9 @@
 ## Status
 
 - **Goal:** build smolrunners, a self-hosted fleet manager that runs each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical CPU, RAM, storage and lifecycle telemetry. The goal for this campaign is every local deliverable below, accepted on the nested Linux host. Live GitHub proof and native-hardware proof are listed under **Needs environment**.
-- **Last accepted revision:** `5c47cda` (D1).
-- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1. **Red:** none. **Parked:** none.
-- **Next slice:** `I2`, `R1` and `W1` are in flight in worktrees; then `E1`, `D2`, `L1`, `L2` as prerequisites clear.
+- **Last accepted revision:** `e39f75d` (R1).
+- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1, R1. **Red:** none. **Parked:** none.
+- **Next slice:** `I2` and `W1` are in flight in worktrees; then `E1`, `D2`, `L1`, `L2` as prerequisites and host headroom clear.
 - **Resume prompt:** `Execute ~/repos/smolrunners/smolrunners-campaign.md from Status`. First command: run the parent steering checkpoint, integrate any finished lane, then launch the next ready P1 lanes.
 
 ## Charter
