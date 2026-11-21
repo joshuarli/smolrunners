@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use smolrunners_core::store::SampleRow;
 use smolrunners_core::telemetry::{History, IngestContext, Sample, SCHEMA_VERSION};
 
 fn fingerprint(value: &str) -> String {
@@ -739,6 +740,10 @@ impl State {
 
     pub fn profile(&self, name: &str) -> Option<&ProfileRecord> {
         self.data.profiles.iter().find(|profile| profile.name == name)
+    }
+
+    pub fn sample_rows_for(&self, execution_attempt_id: i64) -> Vec<SampleRow> {
+        self.history.rows_for(execution_attempt_id).unwrap_or_default()
     }
 
     pub fn summary_by_job(&self) -> HashMap<i64, Value> {

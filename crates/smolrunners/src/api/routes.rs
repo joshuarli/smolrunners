@@ -5,6 +5,10 @@ use serde_json::{Value, json};
 use smolrunners_core::domain::{
     Arch, Distro, ImageTarget, Profile, ProfileName, ProfileRevision, ReleaseToken, Shape,
 };
+use smolrunners_core::sizing::{
+    CacheState, ComparableRunKey, Censor, Executor, Integrals, OomClass, Outcome, RunRecord,
+    recommend_all,
+};
 use smolrunners_core::telemetry::Sample;
 
 use super::http::Request;
@@ -45,6 +49,99 @@ fn segments(path: &str) -> Vec<&str> {
     let mut result = vec![""];
     result.extend_from_slice(&parts[start..]);
     result
+}
+
+fn sizing_runs(state: &State) -> Vec<RunRecord> {
+    let mut runs = Vec::new();
+    for job in &state.data.jobs {
+        let (Some(start), Some(finish)) = (job.start_at_ms, job.finish_at_ms) else {
+            continue;
+        };
+        let Some(profile) = state.data.profiles.iter().find(|record| record.name == job.profile) else {
+            continue;
+        };
+        let rows = state.sample_rows_for(job.execution_attempt_id);
+        if rows.is_empty() || finish <= start {
+            continue;
+        }
+        let wall_seconds = (finish - start) as f64 / 1000.0;
+        let mut peak_cpu = 0.0f64;
+        let mut cpu_sum = 0.0f64;
+        let mut peak_memory_gib = 0.0f64;
+        let mut memory_sum = 0.0f64;
+        let mut samples = 0u32;
+        for row in &rows {
+            samples += 1;
+            match row.metric.as_str() {
+                "cpu.busy_cores" => {
+                    peak_cpu = peak_cpu.max(row.value);
+                    cpu_sum += row.value;
+                }
+                "mem.used_bytes" => {
+                    peak_memory_gib = peak_memory_gib.max(row.value / (1024.0 * 1024.0 * 1024.0));
+                    memory_sum += row.value / (1024.0 * 1024.0 * 1024.0);
+                }
+                _ => {}
+            }
+        }
+        let shape = Shape::new(profile.vcpu, profile.memory_gib).unwrap_or_else(|_| {
+            Shape::new(1, 1).expect("a minimal shape is always valid")
+        });
+        let outcome = match job.result.as_deref().unwrap_or("") {
+            value if value.contains("oom") => Outcome::Oom,
+            value if value.contains("fail") => Outcome::Failed,
+            _ => Outcome::Success,
+        };
+        let oom = if outcome == Outcome::Oom {
+            if job.labels.iter().any(|label| label.contains("service")) {
+                OomClass::ServiceCap
+            } else {
+                OomClass::WorkloadCap
+            }
+        } else {
+            OomClass::None
+        };
+        runs.push(RunRecord {
+            key: ComparableRunKey::new(
+                job.github_url.as_deref().unwrap_or("local"),
+                "workflow",
+                job.name.clone(),
+                job.labels.join(","),
+                format!("{}{}", profile.distro, profile.release),
+                if job.labels.iter().any(|label| label.contains("fixture")) {
+                    Executor::Fixture
+                } else {
+                    Executor::OfficialRunner
+                },
+                profile.revision_id.clone(),
+                profile.arch.clone(),
+                CacheState::Cold,
+            ),
+            outcome,
+            oom,
+            censor: if outcome == Outcome::Oom {
+                Censor::Oom
+            } else {
+                Censor::None
+            },
+            integrals: Integrals {
+                allocated_cpu_core_seconds: shape.vcpu().get() as f64 * wall_seconds,
+                consumed_cpu_core_seconds: cpu_sum * wall_seconds / samples as f64,
+                allocated_memory_gib_seconds: shape.memory_gib() as f64 * wall_seconds,
+                consumed_memory_gib_seconds: memory_sum * wall_seconds / samples as f64,
+            },
+            peak_cpu_cores: peak_cpu,
+            peak_memory_gib,
+            shape,
+            wall_seconds,
+            sample_count: samples,
+            coverage_fraction: 1.0,
+            gap_count: 0,
+            definition_id: "sample-v1".to_owned(),
+            cohort: rows.first().map(|row| row.cohort).unwrap_or_default(),
+        });
+    }
+    runs
 }
 
 fn command_name(method: &str, path: &str) -> String {
@@ -304,28 +401,32 @@ fn dispatch(
                         .with_scope(json!({ "kind": "profile", "name": name, "revision": number })))
                 }
                 Some("recommend") => {
-                    let summaries = state.summary_by_job();
-                    let candidates: Vec<&ProfileRecord> = state.data.profiles.iter().collect();
-                    let observation = candidates.first().map(|profile| {
-                        let peak = summaries.values().map(|value| value["peak_cpu_cores"].as_f64().unwrap_or(0.0)).fold(0.0f64, f64::max);
-                        json!({
-                            "profile": profile.name,
-                            "observed_peak_cpu_cores": peak,
-                            "observation": "peak cpu across completed comparable runs",
-                            "proposal": profile.name,
-                            "confidence": 0.6,
-                            "falsifier": "a paired trial on the same corpus with different host pressure",
+                    let runs = sizing_runs(&state);
+                    let recommendations = recommend_all(runs);
+                    let items: Vec<Value> = recommendations
+                        .iter()
+                        .map(|(key, recommendation)| {
+                            let nearby = recommendation.nearby_profile.map(|shape| {
+                                json!({ "vcpu": shape.vcpu().get(), "memory_gib": shape.memory_gib() })
+                            });
+                            json!({
+                                "repository": key.repository,
+                                "workflow": key.workflow,
+                                "job": key.job,
+                                "image": key.image,
+                                "profile_revision": key.profile_revision,
+                                "hardware_class": key.hardware_class,
+                                "verdict": recommendation.verdict.as_str(),
+                                "observation": recommendation.observation,
+                                "nearby_profile": nearby,
+                                "confidence": recommendation.confidence.as_str(),
+                                "falsifier": recommendation.falsifier,
+                                "blockers": recommendation.blockers.iter().map(|blocker| blocker.as_str()).collect::<Vec<_>>(),
+                            })
                         })
-                    }).unwrap_or_else(|| json!({
-                        "profile": null,
-                        "observed_peak_cpu_cores": null,
-                        "observation": "no comparable runs",
-                        "proposal": null,
-                        "confidence": 0.0,
-                        "falsifier": "run a paired trial after collecting comparable jobs",
-                    }));
-                    let mut reply = ApiReply::new(200, command, observation);
-                    if candidates.is_empty() {
+                        .collect();
+                    let mut reply = ApiReply::new(200, command, json!({ "recommendations": items }));
+                    if state.data.profiles.is_empty() {
                         reply = reply.missing("profile", "no profiles have been applied");
                     }
                     Ok(reply)
