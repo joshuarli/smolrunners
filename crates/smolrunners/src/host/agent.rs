@@ -109,23 +109,27 @@ pub fn reap(config: &Config) -> Result<Vec<String>, String> {
     Ok(reaped)
 }
 
-fn wait_for_vmm(pid: u32) -> bool {
+fn wait_for_vmm(cgroup: &str) -> Option<u32> {
+    let procs = format!("{cgroup}/cgroup.procs");
     for _ in 0..450 {
-        if !owner_alive(pid) {
-            return false;
-        }
-        if let Ok(bytes) = fs::read(format!("/proc/{pid}/status")) {
-            let text = String::from_utf8_lossy(&bytes);
-            let is_vmm = text.lines().any(|line| {
-                line.strip_prefix("Name:").is_some_and(|value| value.trim() == "libkrun VM")
-            });
-            if is_vmm && text.contains("\nSeccomp:") && text.contains("\nNoNewPrivs:") {
-                return true;
+        if let Ok(bytes) = fs::read(&procs) {
+            for word in String::from_utf8_lossy(&bytes).split_whitespace() {
+                if let Ok(pid) = word.parse::<u32>() {
+                    if let Ok(status) = fs::read(format!("/proc/{pid}/status")) {
+                        let text = String::from_utf8_lossy(&status);
+                        let is_vmm = text.lines().any(|line| {
+                            line.strip_prefix("Name:").is_some_and(|value| value.trim() == "libkrun VM")
+                        });
+                        if is_vmm && text.contains("\nSeccomp:") && text.contains("\nNoNewPrivs:") {
+                            return Some(pid);
+                        }
+                    }
+                }
             }
         }
         thread::sleep(Duration::from_millis(200));
     }
-    false
+    None
 }
 
 fn boundary_input(config: &Config, marker: &Marker) -> BoundaryInput {
@@ -242,16 +246,16 @@ pub fn provision(
         .map_err(|error| format!("write marker: {error}"))?;
     let running = smolvm.start_tracked(&["machine", "start", "--name", &marker.machine], Some(&marker.cgroup))?;
 
-    if !wait_for_vmm(running.pid) {
+    let Some(vmm_pid) = wait_for_vmm(&marker.cgroup) else {
         let report = record_boundary(config, &marker)?;
         println!("INELIGIBLE {}", ineligible(&report));
         let _ = smolvm.invoke(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup));
         drop(running);
         teardown(config, &marker)?;
         return Err("vmm did not become observable before readiness".to_string());
-    }
+    };
 
-    marker.vmm_pid = Some(running.pid);
+    marker.vmm_pid = Some(vmm_pid);
     marker::write(&config.state, &marker)
         .map_err(|error| format!("write marker: {error}"))?;
     let report = record_boundary(config, &marker)?;
