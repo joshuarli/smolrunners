@@ -11,7 +11,8 @@ image='alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48
 coord=sr-coord
 host_a=sr-host-a
 host_b=sr-host-b
-local_base=http://127.0.0.1:$port/api/v1
+local_base=https://localhost:$port/api/v1
+certs=/state/certs
 
 fail() { printf 'fleet_two_hosts: %s\n' "$*" >&2; exit 1; }
 
@@ -37,18 +38,34 @@ print(value)
 status_of() { printf '%s\n' "$1" | tail -1; }
 body_of() { printf '%s\n' "$1" | sed '$d'; }
 
+curl_tls() {
+  machine=$1
+  shift
+  smolvm machine exec --name "$machine" -- curl -sS \
+    --cacert "$certs/ca.crt" --cert "$certs/operator.crt" --key "$certs/operator.key" "$@"
+}
+
 call() {
   method=$1
   path=$2
   body=${3:-}
   if [ -n "$body" ]; then
-    smolvm machine exec --name "$coord" -- curl -sS -X "$method" \
-      -H 'Content-Type: application/json' -d "$body" -w '\n%{http_code}' \
-      "$local_base$path"
-  else
-    smolvm machine exec --name "$coord" -- curl -sS -X "$method" \
+    curl_tls "$coord" -X "$method" -H 'Content-Type: application/json' -d "$body" \
       -w '\n%{http_code}' "$local_base$path"
+  else
+    curl_tls "$coord" -X "$method" -w '\n%{http_code}' "$local_base$path"
   fi
+}
+
+call_cert() {
+  name=$1
+  method=$2
+  path=$3
+  body=$4
+  smolvm machine exec --name "$coord" -- curl -sS \
+    --cacert "$certs/ca.crt" --cert "$certs/$name.crt" --key "$certs/$name.key" \
+    -X "$method" -H 'Content-Type: application/json' -d "$body" \
+    -w '\n%{http_code}' "$local_base$path"
 }
 
 expect_status() {
@@ -82,11 +99,26 @@ complete_job() {
 
 hostctl() {
   smolvm machine exec --name "$coord" -- \
-    env "SMOLRUNNERS_API_URL=http://127.0.0.1:$port" "$bin" "$@"
+    env "SMOLRUNNERS_API_URL=https://127.0.0.1:$port" "$bin" "$@" \
+    --tls-ca "$certs/ca.crt" --tls-cert "$certs/operator.crt" \
+    --tls-key "$certs/operator.key" --tls-server-name localhost
 }
 
 inspect_host() {
   hostctl hosts inspect "$1" --json
+}
+
+join_from_host() {
+  machine=$1
+  name=$2
+  token=$3
+  hostname=$4
+  memory=$5
+  smolvm machine exec --name "$machine" -- \
+    env "SMOLRUNNERS_API_URL=https://$coord_ip:$port" "$bin" host join \
+    --token "$token" --hostname "$hostname" --arch arm64 --vcpu 2 --memory-gib "$memory" \
+    --tls-ca "$certs/ca.crt" --tls-cert "$certs/$name.crt" --tls-key "$certs/$name.key" \
+    --tls-server-name localhost --non-interactive --json 2>&1
 }
 
 stop_all() {
@@ -108,12 +140,12 @@ trap cleanup EXIT
 [ -x "$runtime/smolvm" ] || fail "missing runtime at $runtime/smolvm"
 
 rm -rf "$state"
-mkdir -p "$state/home" "$state/tmp" "$state/home/.config" "$state/home/.cache"
+mkdir -p "$state/home" "$state/tmp" "$state/home/.config" "$state/home/.cache" "$state/certs"
 
 printf 'fleet_two_hosts: creating three machines on %s (2 vCPU / 4 GiB each)\n' "$network"
 for machine in "$coord" "$host_a" "$host_b"; do
   smolvm machine create --name "$machine" -I "$image" --network "$network" \
-    --cpus 2 --mem 4096 -v "$repo:/work/smolrunners:ro" >/dev/null 2>&1 \
+    --cpus 2 --mem 4096 -v "$repo:/work/smolrunners:ro" -v "$state/certs:$certs:rw" >/dev/null 2>&1 \
     || fail "create $machine"
 done
 for machine in "$coord" "$host_a" "$host_b"; do
@@ -123,6 +155,18 @@ for machine in "$coord" "$host_a" "$host_b"; do
   smolvm machine exec --name "$machine" -- apk add -q curl >/dev/null 2>&1 \
     || fail "install curl in $machine"
 done
+smolvm machine exec --name "$coord" -- apk add -q openssl >/dev/null 2>&1 \
+  || fail 'install openssl in coordinator'
+
+printf 'fleet_two_hosts: generating a test CA and certificate-bound identities\n'
+smolvm machine exec --name "$coord" -- sh "$repo/tests/cli/generate-certs.sh" "$certs" >/dev/null 2>&1 \
+  || fail 'generate test certificates'
+fp_a=$(smolvm machine exec --name "$coord" -- \
+  sh -c "openssl x509 -in $certs/host-a.crt -outform DER | sha256sum | awk '{print \$1}'" | tr -d '\r')
+fp_b=$(smolvm machine exec --name "$coord" -- \
+  sh -c "openssl x509 -in $certs/host-b.crt -outform DER | sha256sum | awk '{print \$1}'" | tr -d '\r')
+[ "$fp_a" = "$fp_b" ] && fail 'client certificates are not distinct'
+[ ${#fp_a} -eq 64 ] || fail "bad host-a certificate fingerprint: $fp_a"
 
 coord_ip=$(smolvm machine exec --name "$coord" -- \
   sh -c "ip -4 addr show eth0 | awk '/inet /{print \$2}' | cut -d/ -f1" | tr -d '\r')
@@ -130,11 +174,14 @@ coord_ip=$(smolvm machine exec --name "$coord" -- \
 
 smolvm machine exec --name "$coord" -- mkdir -p /state
 smolvm machine exec -d --name "$coord" -- "$bin" serve \
-  --listen "0.0.0.0:$port" --state-dir /state >"$state/server.log" 2>&1 || fail 'start coordinator'
+  --listen "0.0.0.0:$port" --state-dir /state \
+  --tls-ca "$certs/ca.crt" --tls-cert "$certs/server.crt" --tls-key "$certs/server.key" \
+  >"$state/server.log" 2>&1 || fail 'start coordinator'
 ready=0
 attempt=0
 while [ "$attempt" -lt 60 ]; do
   if smolvm machine exec --name "$coord" -- curl -fsS --max-time 2 \
+    --cacert "$certs/ca.crt" --cert "$certs/operator.crt" --key "$certs/operator.key" \
     "$local_base/status" >"$state/status.json" 2>/dev/null; then
     ready=1
     break
@@ -143,39 +190,52 @@ while [ "$attempt" -lt 60 ]; do
   sleep 1
 done
 [ "$ready" -eq 1 ] || fail "coordinator did not become ready: $(cat "$state/server.log")"
+python3 -c '
+import json, sys
+with open(sys.argv[1]) as handle:
+    status = json.load(handle)["data"]
+assert status["mtls"] is True, status
+assert status["transport"] == "mtls", status
+' "$state/status.json" || fail 'status did not report a verified TLS transport'
 
 out=$(call POST /init '{}')
 expect_status "$out" 200 'init'
 
-printf 'fleet_two_hosts: unpredictable single-use invite, local key and declared certificate\n'
-out=$(call POST /host/invite '{"host_key":"sr-host-a","cert_fingerprint":"cert-a-fp"}')
+printf 'fleet_two_hosts: unauthenticated and cross-role operations are refused\n'
+out=$(smolvm machine exec --name "$coord" -- curl -sS --cacert "$certs/ca.crt" \
+  -X POST -H 'Content-Type: application/json' -d '{"host_key":"sr-host-anon"}' \
+  -w '\n%{http_code}' "$local_base/host/invite")
+expect_status "$out" 401 'invite without a client certificate'
+
+printf 'fleet_two_hosts: certificate-derived identity cannot be overridden by the body\n'
+out=$(call POST /host/invite "{\"host_key\":\"sr-host-a\",\"cert_fingerprint\":\"$fp_a\"}")
 expect_status "$out" 200 'invite host-a'
 token_a=$(body_of "$out" | field data.token)
 key_fp=$(body_of "$out" | field data.key_fingerprint)
 expected_fp=$(python3 -c 'import hashlib; print(hashlib.sha256(b"sr-host-a").hexdigest())')
 [ "$key_fp" = "$expected_fp" ] || fail 'invite key fingerprint is not a SHA-256 of the local key'
 
-out=$(call POST /host/join "{\"token\":\"$token_a\",\"hostname\":\"sr-host-a\",\"arch\":\"arm64\",\"vcpu\":2,\"memory_gib\":4,\"host_key\":\"wrong-key\",\"cert_fingerprint\":\"cert-a-fp\"}")
-expect_status "$out" 401 'join with wrong local key'
+out=$(call_cert host-b POST /host/join "{\"token\":\"$token_a\",\"hostname\":\"sr-host-a\",\"arch\":\"arm64\",\"vcpu\":2,\"memory_gib\":4,\"host_key\":\"sr-host-a\",\"cert_fingerprint\":\"$fp_a\"}")
+expect_status "$out" 401 'host-b certificate claiming host-a identity in the body'
 body_of "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["data"]["message"]=="fingerprint_mismatch", d' \
-  || fail 'fingerprint mismatch was not reported'
+  || fail 'an impersonating body claim was not rejected'
 
-out=$(smolvm machine exec --name "$host_a" -- env "SMOLRUNNERS_API_URL=http://$coord_ip:$port" \
-  "$bin" host join --token "$token_a" --hostname sr-host-a --arch arm64 \
-  --vcpu 2 --memory-gib 4 --host-key sr-host-a --cert-fingerprint cert-a-fp \
-  --non-interactive --json 2>&1)
+out=$(call POST /host/join "{\"token\":\"$token_a\",\"hostname\":\"sr-host-a\",\"arch\":\"arm64\",\"vcpu\":2,\"memory_gib\":4,\"host_key\":\"sr-host-a\",\"cert_fingerprint\":\"$fp_a\"}")
+expect_status "$out" 403 'operator certificate cannot join as a host'
+
+out=$(join_from_host "$host_a" host-a "$token_a" sr-host-a 4)
 host_a_id=$(printf '%s\n' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
 [ "$host_a_id" -gt 0 ] || fail "join from sr-host-a failed: $out"
 
-out=$(call POST /host/join "{\"token\":\"$token_a\",\"hostname\":\"sr-host-a\",\"arch\":\"arm64\",\"vcpu\":2,\"memory_gib\":4,\"host_key\":\"sr-host-a\",\"cert_fingerprint\":\"cert-a-fp\"}")
+out=$(call_cert host-a POST /host/join "{\"token\":\"$token_a\",\"hostname\":\"sr-host-a\",\"arch\":\"arm64\",\"vcpu\":2,\"memory_gib\":4,\"host_key\":\"sr-host-a\",\"cert_fingerprint\":\"$fp_a\"}")
 expect_status "$out" 409 'reuse of consumed invite'
 
 inspect=$(inspect_host "$host_a_id" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["data"]))')
 [ "$(printf '%s' "$inspect" | field key_fingerprint)" = "$expected_fp" ] || fail 'joined host key fingerprint differs'
-[ "$(printf '%s' "$inspect" | field cert_fingerprint)" = 'cert-a-fp' ] || fail 'joined host certificate fingerprint differs'
-[ "$(printf '%s' "$inspect" | field mtls)" = 'False' ] || fail 'plain HTTP must not be recorded as mTLS'
-[ "$(printf '%s' "$inspect" | field certificate_declared)" = 'True' ] || fail 'declared certificate was not recorded'
-[ "$(printf '%s' "$inspect" | field transport)" = 'plain-http' ] || fail 'transport was not recorded honestly'
+[ "$(printf '%s' "$inspect" | field cert_fingerprint)" = "$fp_a" ] || fail 'joined host certificate fingerprint is not the verified client certificate'
+[ "$(printf '%s' "$inspect" | field mtls)" = 'True' ] || fail 'verified TLS join was not recorded as mTLS'
+[ "$(printf '%s' "$inspect" | field certificate_declared)" = 'False' ] || fail 'join still trusted a declared certificate'
+[ "$(printf '%s' "$inspect" | field transport)" = 'mtls' ] || fail 'joined host transport was not recorded as mtls'
 printf '%s\n' "$token_a" | grep -Eq '^sr-invite-[0-9]+-[0-9a-f]{64}$' \
   || fail "invite token is not unpredictable: $token_a"
 probe_out=$(call POST /host/invite '{"host_key":"sr-host-tmp","cert_fingerprint":"cert-tmp-fp"}')
@@ -183,13 +243,10 @@ probe_token=$(body_of "$probe_out" | field data.token)
 [ "$probe_token" != "$token_a" ] || fail 'two invitations reused the same token'
 [ "$(printf '%s' "$inspect" | field incarnation)" = '1' ] || fail 'joined host incarnation'
 
-out=$(call POST /host/invite '{"host_key":"sr-host-b","cert_fingerprint":"cert-b-fp"}')
+out=$(call POST /host/invite "{\"host_key\":\"sr-host-b\",\"cert_fingerprint\":\"$fp_b\"}")
 expect_status "$out" 200 'invite host-b'
 token_b=$(body_of "$out" | field data.token)
-out=$(smolvm machine exec --name "$host_b" -- env "SMOLRUNNERS_API_URL=http://$coord_ip:$port" \
-  "$bin" host join --token "$token_b" --hostname sr-host-b --arch arm64 \
-  --vcpu 2 --memory-gib 3 --host-key sr-host-b --cert-fingerprint cert-b-fp \
-  --non-interactive --json 2>&1)
+out=$(join_from_host "$host_b" host-b "$token_b" sr-host-b 3)
 host_b_id=$(printf '%s\n' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["id"])')
 [ "$host_b_id" -gt 0 ] || fail "join from sr-host-b failed: $out"
 

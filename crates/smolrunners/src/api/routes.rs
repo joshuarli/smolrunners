@@ -15,6 +15,7 @@ use smolrunners_core::telemetry::Sample;
 use super::http::Request;
 use super::schema::ApiReply;
 use super::state::{CacheRecord, ProfileRecord, State};
+use super::tls::Peer;
 
 type RouteError = (u16, &'static str, String);
 
@@ -222,6 +223,18 @@ fn parse_id(value: Option<&&str>) -> Result<i64, RouteError> {
         .map_err(|error| (400, "bad_id", format!("invalid id: {error}")))
 }
 
+fn require_authenticated(request: &Request, command: &str) -> Result<(), RouteError> {
+    match &request.peer {
+        Peer::Plain => Ok(()),
+        Peer::TlsUnauthenticated => Err((
+            401,
+            "unauthenticated",
+            format!("{command} requires a verified client certificate"),
+        )),
+        Peer::TlsAuthenticated(_) => Ok(()),
+    }
+}
+
 pub fn route(request: &Request, state: &Arc<Mutex<State>>) -> ApiReply {
     let command = command_name(&request.method, &request.path);
     match dispatch(request, state, &command) {
@@ -249,6 +262,8 @@ fn dispatch(
                     "service": "smolrunners",
                     "initialized": state.data.initialized,
                     "api_schema_version": super::schema::API_SCHEMA_VERSION,
+                    "transport": if request.peer.is_tls() { "mtls" } else { "plain-http" },
+                    "mtls": request.peer.is_authenticated(),
                 }),
             ))
         }
@@ -289,6 +304,7 @@ fn dispatch(
         }
         ("POST", "host") => match parts.get(2).copied() {
             Some("invite") => {
+                require_authenticated(request, command)?;
                 let host_key = body["host_key"].as_str().unwrap_or("sr-host-a").to_owned();
                 let cert_fingerprint = body["cert_fingerprint"].as_str().map(str::to_owned);
                 let mut state = state.lock().map_err(|_| (500, "lock", "state lock poisoned".to_owned()))?;
@@ -304,11 +320,29 @@ fn dispatch(
                 let arch = body["arch"].as_str().unwrap_or("arm64").to_owned();
                 let vcpu = body["vcpu"].as_u64().unwrap_or(4) as u16;
                 let memory = body["memory_gib"].as_u64().unwrap_or(8) as u32;
-                let host_key = body["host_key"].as_str().unwrap_or("sr-host-a").to_owned();
-                let cert_fingerprint = body["cert_fingerprint"].as_str().unwrap_or("").to_owned();
+                let (host_key, cert_fingerprint, verified) = match &request.peer {
+                    Peer::TlsAuthenticated(identity) => {
+                        if !identity.is_host() {
+                            return Err((
+                                403,
+                                "host_identity_required",
+                                "host join requires a host client certificate".to_owned(),
+                            ));
+                        }
+                        (identity.name.clone(), identity.cert_fingerprint.clone(), true)
+                    }
+                    Peer::Plain => (
+                        body["host_key"].as_str().unwrap_or("sr-host-a").to_owned(),
+                        body["cert_fingerprint"].as_str().unwrap_or("").to_owned(),
+                        false,
+                    ),
+                    Peer::TlsUnauthenticated => {
+                        return Err((401, "unauthenticated", "host join requires a verified client certificate".to_owned()));
+                    }
+                };
                 let mut state = state.lock().map_err(|_| (500, "lock", "state lock poisoned".to_owned()))?;
                 let host = state
-                    .join_host(token, &hostname, &arch, vcpu, memory, &host_key, &cert_fingerprint, now_ms())
+                    .join_host(token, &hostname, &arch, vcpu, memory, &host_key, &cert_fingerprint, verified, now_ms())
                     .map_err(|error| {
                         let status = match error.as_str() {
                             "fingerprint_mismatch" | "certificate_mismatch" | "missing_certificate" => 401,
@@ -338,24 +372,28 @@ fn dispatch(
             let action = parts.get(3).copied();
             let state_value = match action {
                 Some("drain") => {
+                    require_authenticated(request, command)?;
                     let (previous, next, revision) = state
                         .drain_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
                     json!({ "previous": previous, "next": next, "drain_revision": revision })
                 }
                 Some("resume") => {
+                    require_authenticated(request, command)?;
                     let (previous, next, revision) = state
                         .resume_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
                     json!({ "previous": previous, "next": next, "drain_revision": revision })
                 }
                 Some("revoke") => {
+                    require_authenticated(request, command)?;
                     let (previous, next, revision) = state
                         .revoke_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
                     json!({ "previous": previous, "next": next, "drain_revision": revision, "revoked": true })
                 }
                 Some("kill") => {
+                    require_authenticated(request, command)?;
                     let (previous, next, revision) = state
                         .kill_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
@@ -701,6 +739,7 @@ mod tests {
     use smolrunners_core::telemetry::{Metric, Sample, Scope, Unit};
 
     use super::*;
+    use crate::api::tls::{Identity, IdentityKind};
     use crate::api::{JobRecord, ProfileRecord};
 
     static NEXT_STATE: AtomicU64 = AtomicU64::new(0);
@@ -798,6 +837,151 @@ mod tests {
             github_url: None,
         });
         state.seed_context(1, 1).expect("seed context");
+    }
+
+    fn post(path: &str, body: Value, peer: Peer) -> Request {
+        Request {
+            method: "POST".to_owned(),
+            path: path.to_owned(),
+            body: serde_json::to_vec(&body).expect("encode body"),
+            peer,
+        }
+    }
+
+    fn host_identity(name: &str, fingerprint: &str) -> Peer {
+        Peer::TlsAuthenticated(Identity {
+            name: name.to_owned(),
+            kind: IdentityKind::Host,
+            cert_fingerprint: fingerprint.to_owned(),
+        })
+    }
+
+    #[test]
+    fn join_takes_identity_from_the_certificate_and_ignores_body_claims() {
+        let (_dir, state) = test_state();
+        let state = Arc::new(Mutex::new(state));
+        let invitation = {
+            let mut state = state.lock().expect("lock");
+            state
+                .create_invitation("sr-host-a", Some("cert-a-fp".to_owned()), 1_000)
+                .expect("invite")
+        };
+        let reply = route(
+            &post(
+                "/api/v1/host/join",
+                json!({
+                    "token": invitation.token,
+                    "hostname": "sr-host-a",
+                    "arch": "arm64",
+                    "vcpu": 2,
+                    "memory_gib": 4,
+                    "host_key": "sr-host-a",
+                    "cert_fingerprint": "attacker-declared-fingerprint",
+                }),
+                host_identity("sr-host-a", "cert-a-fp"),
+            ),
+            &state,
+        );
+        assert_eq!(reply.status, 200, "{}", reply.data);
+        assert_eq!(reply.data["host_key"], "sr-host-a");
+        assert_eq!(reply.data["cert_fingerprint"], "cert-a-fp");
+        assert_eq!(reply.data["mtls"], true);
+        assert_eq!(reply.data["transport"], "mtls");
+        assert_eq!(reply.data["certificate_declared"], false);
+    }
+
+    #[test]
+    fn a_certificate_cannot_join_an_invitation_bound_to_another_host() {
+        let (_dir, state) = test_state();
+        let state = Arc::new(Mutex::new(state));
+        let invitation = {
+            let mut state = state.lock().expect("lock");
+            state
+                .create_invitation("sr-host-a", Some("cert-a-fp".to_owned()), 1_000)
+                .expect("invite")
+        };
+        let reply = route(
+            &post(
+                "/api/v1/host/join",
+                json!({
+                    "token": invitation.token,
+                    "hostname": "sr-host-a",
+                    "arch": "arm64",
+                    "vcpu": 2,
+                    "memory_gib": 4,
+                    "host_key": "sr-host-a",
+                    "cert_fingerprint": "cert-a-fp",
+                }),
+                host_identity("sr-host-b", "cert-b-fp"),
+            ),
+            &state,
+        );
+        assert_eq!(reply.status, 401, "{}", reply.data);
+        assert_eq!(reply.data["message"], "fingerprint_mismatch");
+    }
+
+    #[test]
+    fn unauthenticated_tls_requests_cannot_run_sensitive_operations() {
+        let (_dir, state) = test_state();
+        let state = Arc::new(Mutex::new(state));
+        let invite = route(
+            &post("/api/v1/host/invite", json!({}), Peer::TlsUnauthenticated),
+            &state,
+        );
+        assert_eq!(invite.status, 401);
+
+        let operator = Peer::TlsAuthenticated(Identity {
+            name: "admin".to_owned(),
+            kind: IdentityKind::Operator,
+            cert_fingerprint: "operator-fp".to_owned(),
+        });
+        let reply = route(
+            &post(
+                "/api/v1/host/join",
+                json!({ "token": "anything", "host_key": "sr-host-a" }),
+                operator,
+            ),
+            &state,
+        );
+        assert_eq!(reply.status, 403);
+        assert_eq!(reply.data["message"], "host join requires a host client certificate");
+    }
+
+    #[test]
+    fn plain_http_preserves_local_operator_behaviour() {
+        let (_dir, state) = test_state();
+        let state = Arc::new(Mutex::new(state));
+        let invitation = {
+            let mut state = state.lock().expect("lock");
+            state
+                .create_invitation("sr-host-a", Some("cert-a-fp".to_owned()), 1_000)
+                .expect("invite")
+        };
+        let reply = route(
+            &post(
+                "/api/v1/host/invite",
+                json!({ "host_key": "sr-host-b" }),
+                Peer::Plain,
+            ),
+            &state,
+        );
+        assert_eq!(reply.status, 200);
+
+        let reply = route(
+            &post(
+                "/api/v1/host/join",
+                json!({
+                    "token": invitation.token,
+                    "host_key": "sr-host-a",
+                    "cert_fingerprint": "cert-a-fp",
+                }),
+                Peer::Plain,
+            ),
+            &state,
+        );
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.data["mtls"], false);
+        assert_eq!(reply.data["transport"], "plain-http");
     }
 
     #[test]

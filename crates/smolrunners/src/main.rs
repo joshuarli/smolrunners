@@ -27,7 +27,13 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         _ => {
-            let transport = smolrunners::cli::HttpTransport::default();
+            let transport = match smolrunners::cli::transport_from_args(&args) {
+                Ok(transport) => transport,
+                Err(error) => {
+                    eprintln!("client: {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
             let output = smolrunners::cli::run(&args, &transport);
             if !output.stderr.is_empty() {
                 eprint!("{}", output.stderr);

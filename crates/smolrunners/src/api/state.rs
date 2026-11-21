@@ -266,6 +266,7 @@ impl State {
         total_memory_gib: u32,
         host_key: &str,
         cert_fingerprint: &str,
+        verified: bool,
         now_ms: i64,
     ) -> Result<HostRecord, String> {
         let invitation = self
@@ -288,11 +289,12 @@ impl State {
         let key_fingerprint = invitation.key_fingerprint.clone();
         let bound_host_key = invitation.host_key.clone();
         let invitation_id = invitation.id;
+        let transport = if verified { "mtls" } else { "plain-http" };
         let capabilities = vec![
             format!("arch={arch}"),
             format!("vcpu={total_vcpu}"),
             format!("memory_gib={total_memory_gib}"),
-            "transport=plain-http".to_owned(),
+            format!("transport={transport}"),
         ];
         if let Some(invitation) = self
             .data
@@ -319,9 +321,9 @@ impl State {
             host.capabilities = capabilities;
             host.key_fingerprint = key_fingerprint;
             host.cert_fingerprint = cert_fingerprint.to_owned();
-            host.mtls = false;
-            host.certificate_declared = true;
-            host.transport = default_transport();
+            host.mtls = verified;
+            host.certificate_declared = !verified;
+            host.transport = transport.to_owned();
             host.revoked = false;
             host.last_contact_ms = Some(now_ms);
             host.drain_revision += 1;
@@ -342,9 +344,9 @@ impl State {
             capabilities,
             key_fingerprint,
             cert_fingerprint: cert_fingerprint.to_owned(),
-            mtls: false,
-            certificate_declared: true,
-            transport: default_transport(),
+            mtls: verified,
+            certificate_declared: !verified,
+            transport: transport.to_owned(),
             drain_revision: 0,
             revoked: false,
             last_contact_ms: Some(now_ms),
@@ -893,11 +895,58 @@ mod tests {
         assert_eq!(first.token.len(), "sr-invite-".len() + first.id.to_string().len() + 1 + 64);
 
         let host = state
-            .join_host(&first.token, "host-a", "arm64", 2, 4, "host-a", "cert-a", 2_000)
+            .join_host(&first.token, "host-a", "arm64", 2, 4, "host-a", "cert-a", false, 2_000)
             .expect("join a");
         assert!(!host.mtls, "plain HTTP cannot be mTLS");
         assert!(host.certificate_declared);
         assert_eq!(host.transport, "plain-http");
         assert!(host.capabilities.iter().any(|capability| capability == "transport=plain-http"));
+    }
+
+    #[test]
+    fn a_verified_join_records_mtls_from_the_certificate_identity() {
+        let dir = TestDir::new();
+        let mut state = State::open(&dir.0).expect("open state");
+        let invitation = state
+            .create_invitation("sr-host-a", Some("cert-a-fp".to_owned()), 1_000)
+            .expect("invite");
+        let joined = state
+            .join_host(
+                &invitation.token,
+                "sr-host-a",
+                "arm64",
+                2,
+                4,
+                "sr-host-a",
+                "cert-a-fp",
+                true,
+                2_000,
+            )
+            .expect("verified join");
+        assert!(joined.mtls);
+        assert!(!joined.certificate_declared);
+        assert_eq!(joined.transport, "mtls");
+        assert!(joined.capabilities.iter().any(|capability| capability == "transport=mtls"));
+    }
+
+    #[test]
+    fn a_certificate_identity_cannot_join_an_invitation_bound_to_another_host() {
+        let dir = TestDir::new();
+        let mut state = State::open(&dir.0).expect("open state");
+        let invitation = state
+            .create_invitation("sr-host-a", Some("cert-a-fp".to_owned()), 1_000)
+            .expect("invite");
+        let result = state.join_host(
+            &invitation.token,
+            "sr-host-b",
+            "arm64",
+            2,
+            4,
+            "sr-host-b",
+            "cert-b-fp",
+            true,
+            2_000,
+        );
+        assert_eq!(result.err().as_deref(), Some("fingerprint_mismatch"));
     }
 }

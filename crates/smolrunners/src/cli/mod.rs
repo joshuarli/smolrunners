@@ -3,15 +3,31 @@ mod render;
 mod transport;
 
 use std::fs;
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::api::ApiReply;
+use crate::api::{ApiReply, client_config, server_url};
 
 pub use render::Output;
 pub use transport::{HttpTransport, Transport};
+
+pub fn transport_from_args(args: &[String]) -> Result<HttpTransport, String> {
+    let parsed = args::parse(args)?;
+    let mut transport = HttpTransport::new(server_url());
+    if let (Some(ca), Some(cert), Some(key)) = (
+        parsed.option("tls-ca"),
+        parsed.option("tls-cert"),
+        parsed.option("tls-key"),
+    ) {
+        let name = parsed.option("tls-server-name").unwrap_or("localhost");
+        let tls = client_config(Path::new(ca), Path::new(cert), Path::new(key), name)?;
+        transport = transport.with_tls(tls);
+    }
+    Ok(transport)
+}
 
 fn usage() -> Output {
     Output::ok(
