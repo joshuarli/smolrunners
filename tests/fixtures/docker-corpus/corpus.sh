@@ -7,10 +7,14 @@ node=/opt/node/bin/node
 start_daemon wipe
 assert_data_root
 
+pull_pids=''
 for image in registry:2 alpine:3.24 docker:29.9.3-cli testcontainers/ryuk:0.11.0; do
   docker pull -q "$image" >/dev/null 2>&1 &
+  pull_pids="$pull_pids $!"
 done
-wait
+for pid in $pull_pids; do
+  wait "$pid" || true
+done
 
 note 'item 1: shell docker run with local registry push and pull'
 docker pull -q registry:2 >/dev/null
