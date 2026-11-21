@@ -1,3 +1,4 @@
+use crate::host::boundary::{self, BoundaryInput, Report, Verdict};
 use crate::host::config::Config;
 use crate::host::marker::{self, Marker, Phase};
 use crate::host::smolvm::{self, Smolvm};
@@ -108,6 +109,57 @@ pub fn reap(config: &Config) -> Result<Vec<String>, String> {
     Ok(reaped)
 }
 
+fn wait_for_vmm(pid: u32) -> bool {
+    for _ in 0..450 {
+        if !owner_alive(pid) {
+            return false;
+        }
+        if let Ok(bytes) = fs::read(format!("/proc/{pid}/status")) {
+            let text = String::from_utf8_lossy(&bytes);
+            let is_vmm = text.lines().any(|line| {
+                line.strip_prefix("Name:").is_some_and(|value| value.trim() == "libkrun VM")
+            });
+            if is_vmm && text.contains("\nSeccomp:") && text.contains("\nNoNewPrivs:") {
+                return true;
+            }
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+    false
+}
+
+fn boundary_input(config: &Config, marker: &Marker) -> BoundaryInput {
+    BoundaryInput {
+        uid: config.uid,
+        cpu_max: config.cpu_max.clone(),
+        memory_max: config.memory_max.clone(),
+        pids_max: config.pids_max.clone(),
+        net_allow: config.net_allow.clone(),
+        net_mode: config.net_mode(),
+        machine: marker.machine.clone(),
+        cgroup: marker.cgroup.clone(),
+        incarnation: marker.incarnation.clone(),
+        vmm_pid: marker.vmm_pid,
+        policy_variables: boundary::host_policy_variables(),
+    }
+}
+
+fn record_boundary(config: &Config, marker: &Marker) -> Result<Report, String> {
+    let report = boundary::evaluate(&boundary_input(config, marker));
+    report.write(&config.state)?;
+    Ok(report)
+}
+
+fn ineligible(report: &Report) -> String {
+    report
+        .checks
+        .iter()
+        .filter(|item| item.verdict == Verdict::Fail || item.verdict == Verdict::Missing)
+        .map(|item| format!("{}: {}", item.name, item.reason.clone().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn wait_for_stop(config: &Config, machine: &str) {
     let control = config.control_file(machine);
     while !control.exists() {
@@ -133,19 +185,28 @@ pub fn provision(
     let id = incarnation();
     let machine = machine_name(&id, role);
     let cgroup = format!("/sys/fs/cgroup/{machine}");
+    let net_mode = config.net_mode();
     let mut marker = Marker {
-        machine: machine.clone(),
+        machine,
         owner_pid: std::process::id(),
         incarnation: id,
         phase: Phase::Creating,
         image: image.to_string(),
         uid: config.uid,
         cgroup,
+        vmm_pid: None,
+        net_allow: config.net_allow.clone(),
+        net_mode: net_mode.clone(),
     };
 
     marker::write(&config.state, &marker)
         .map_err(|error| format!("write marker: {error}"))?;
     println!("CLAIM {}", marker.machine);
+    let network_flag = if net_mode == "private" {
+        "--block-private"
+    } else {
+        "--allow-host-loopback"
+    };
     let smolvm = Smolvm::new(config);
     smolvm.invoke(
         &[
@@ -155,7 +216,7 @@ pub fn provision(
             &marker.machine,
             "-I",
             image,
-            "--block-private",
+            network_flag,
             "--cpus",
             &cpus.to_string(),
             "--mem",
@@ -179,7 +240,28 @@ pub fn provision(
     marker.phase = Phase::Starting;
     marker::write(&config.state, &marker)
         .map_err(|error| format!("write marker: {error}"))?;
-    smolvm.invoke(&["machine", "start", "--name", &marker.machine], Some(&marker.cgroup))?;
+    let running = smolvm.start_tracked(&["machine", "start", "--name", &marker.machine], Some(&marker.cgroup))?;
+
+    if !wait_for_vmm(running.pid) {
+        let report = record_boundary(config, &marker)?;
+        println!("INELIGIBLE {}", ineligible(&report));
+        let _ = smolvm.invoke(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup));
+        drop(running);
+        teardown(config, &marker)?;
+        return Err("vmm did not become observable before readiness".to_string());
+    }
+
+    marker.vmm_pid = Some(running.pid);
+    marker::write(&config.state, &marker)
+        .map_err(|error| format!("write marker: {error}"))?;
+    let report = record_boundary(config, &marker)?;
+    if !report.eligible {
+        println!("INELIGIBLE {}", ineligible(&report));
+        let _ = smolvm.invoke(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup));
+        drop(running);
+        teardown(config, &marker)?;
+        return Err("host failed the boundary checks before readiness".to_string());
+    }
 
     marker.phase = Phase::Started;
     marker::write(&config.state, &marker)
@@ -188,6 +270,7 @@ pub fn provision(
 
     wait_for_stop(config, &marker.machine);
     teardown(config, &marker)?;
+    let _ = running.wait();
     println!("REMOVED {}", marker.machine);
     Ok(())
 }

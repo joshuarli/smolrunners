@@ -21,6 +21,20 @@ pub struct Marker {
     pub image: String,
     pub uid: u32,
     pub cgroup: String,
+    #[serde(default)]
+    pub vmm_pid: Option<u32>,
+    #[serde(default = "default_net_allow")]
+    pub net_allow: String,
+    #[serde(default = "default_net_mode")]
+    pub net_mode: String,
+}
+
+fn default_net_allow() -> String {
+    "10.0.0.0/8".to_string()
+}
+
+fn default_net_mode() -> String {
+    "private".to_string()
 }
 
 pub fn directory(state: &Path) -> PathBuf {

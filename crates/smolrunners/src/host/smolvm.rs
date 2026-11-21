@@ -1,7 +1,7 @@
 use crate::host::config::Config;
 use crate::host::environment;
 use serde::Deserialize;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ErrorBody {
@@ -53,6 +53,8 @@ impl<'a> Smolvm<'a> {
             command.env(name, value);
         }
         command
+            .env("SMOLVM_SECCOMP", "enforce")
+            .env("SMOLVM_LANDLOCK", "enforce")
             .arg("--error-format")
             .arg("json")
             .arg("--state-dir")
@@ -77,6 +79,28 @@ impl<'a> Smolvm<'a> {
         Err(format!("{} failed: {} ({})", args.join(" "), error.message, error.code))
     }
 
+    pub fn start_tracked(&self, args: &[&str], cgroup: Option<&str>) -> Result<Running, String> {
+        let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
+        let child = self
+            .command(&owned, cgroup)
+            .spawn()
+            .map_err(|error| format!("spawn smolvm: {error}"))?;
+        let pid = child.id();
+        Ok(Running { child, pid })
+    }
+}
+
+pub struct Running {
+    pub pid: u32,
+    child: Child,
+}
+
+impl Running {
+    pub fn wait(self) -> Result<Output, String> {
+        self.child
+            .wait_with_output()
+            .map_err(|error| format!("wait for smolvm: {error}"))
+    }
 }
 
 pub fn parse_failure(output: &Output) -> ErrorBody {

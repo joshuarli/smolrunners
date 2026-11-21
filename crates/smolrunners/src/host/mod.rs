@@ -1,4 +1,5 @@
 mod agent;
+mod boundary;
 mod config;
 mod environment;
 mod marker;
@@ -36,6 +37,63 @@ pub fn run(args: &[String]) -> ExitCode {
             eprintln!("host: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+pub fn doctor(args: &[String]) -> ExitCode {
+    match execute_doctor(args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("doctor: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn execute_doctor(args: &[String]) -> Result<(), String> {
+    let mut state: Option<PathBuf> = None;
+    let mut runtime: Option<PathBuf> = None;
+    let mut json = false;
+    let mut index = 0usize;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--state-dir" => state = Some(PathBuf::from(value(args, &mut index, "--state-dir")?)),
+            "--runtime-dir" => {
+                runtime = Some(PathBuf::from(value(args, &mut index, "--runtime-dir")?))
+            }
+            "--json" => json = true,
+            "--help" | "-h" => {
+                eprintln!("usage: smolrunners doctor --state-dir DIR --runtime-dir DIR [--json]");
+                std::process::exit(2)
+            }
+            other => return Err(format!("unknown option {other}")),
+        }
+        index += 1;
+    }
+    let config = Config {
+        state: state.ok_or("missing --state-dir")?,
+        runtime: runtime.ok_or("missing --runtime-dir")?,
+        launcher: PathBuf::new(),
+        uid: 60000,
+        cpu_max: "200000 100000".to_string(),
+        memory_max: "2147483648".to_string(),
+        pids_max: "512".to_string(),
+        net_allow: "10.0.0.0/8".to_string(),
+        hold_after_create_ms: 0,
+    };
+    let report = boundary::doctor(&config);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report).map_err(|error| format!("encode report: {error}"))?);
+    } else {
+        for item in &report.checks {
+            println!("{:<20} {:>7}  {}", item.name, format!("{:?}", item.verdict).to_ascii_lowercase(), item.reason.clone().unwrap_or_default());
+        }
+        println!("eligible: {}", report.eligible);
+    }
+    if report.eligible {
+        Ok(())
+    } else {
+        Err("one or more boundary checks failed".to_string())
     }
 }
 

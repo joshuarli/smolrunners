@@ -7,12 +7,13 @@ fn main() -> ExitCode {
     match args.get(1).map(String::as_str) {
         Some("serve") => ExitCode::SUCCESS,
         Some("host") => host::run(&args[2..]),
+        Some("doctor") => host::doctor(&args[2..]),
         Some("--version" | "-V") => {
             println!("smolrunners {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
-            eprintln!("usage: smolrunners <serve|host> [options]");
+            eprintln!("usage: smolrunners <serve|host|doctor> [options]");
             ExitCode::from(2)
         }
     }

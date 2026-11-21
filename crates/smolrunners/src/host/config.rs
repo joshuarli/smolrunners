@@ -14,6 +14,19 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn net_mode(&self) -> String {
+        let loopback = self
+            .net_allow
+            .split(',')
+            .map(|entry| entry.trim().to_ascii_lowercase())
+            .any(|entry| entry.starts_with("127.") || entry.starts_with("::1") || entry == "0.0.0.0/0" || entry == "::/0");
+        if loopback {
+            "allow-loopback".to_string()
+        } else {
+            "private".to_string()
+        }
+    }
+
     pub fn smolvm_binary(&self) -> PathBuf {
         self.runtime.join("smolvm")
     }
