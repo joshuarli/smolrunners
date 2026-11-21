@@ -21,7 +21,10 @@ test-fast:
 	cargo test --workspace
 	cd adapter && go test ./...
 
-test-vm:
+vm-binaries:
+	sh scripts/build-vm-binaries.sh
+
+test-vm: vm-binaries
 	@test -n "$(T)" || { echo "usage: make test-vm T=<name>" >&2; exit 2; }
 ifeq ($(T),connected_job)
 	TMPDIR=$(CURDIR)/.work/tmp sh tests/vm/connected_job.sh

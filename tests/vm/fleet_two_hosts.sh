@@ -176,7 +176,11 @@ inspect=$(inspect_host "$host_a_id" | python3 -c 'import json,sys; print(json.du
 [ "$(printf '%s' "$inspect" | field mtls)" = 'False' ] || fail 'plain HTTP must not be recorded as mTLS'
 [ "$(printf '%s' "$inspect" | field certificate_declared)" = 'True' ] || fail 'declared certificate was not recorded'
 [ "$(printf '%s' "$inspect" | field transport)" = 'plain-http' ] || fail 'transport was not recorded honestly'
-case "$token_a" in sr-invite-????????????????????????????????????????????????????????????????) ;; *) fail "invite token is not unpredictable: $token_a" ;; esac
+printf '%s\n' "$token_a" | grep -Eq '^sr-invite-[0-9]+-[0-9a-f]{64}$' \
+  || fail "invite token is not unpredictable: $token_a"
+probe_out=$(call POST /host/invite '{"host_key":"sr-host-tmp","cert_fingerprint":"cert-tmp-fp"}')
+probe_token=$(body_of "$probe_out" | field data.token)
+[ "$probe_token" != "$token_a" ] || fail 'two invitations reused the same token'
 [ "$(printf '%s' "$inspect" | field incarnation)" = '1' ] || fail 'joined host incarnation'
 
 out=$(call POST /host/invite '{"host_key":"sr-host-b","cert_fingerprint":"cert-b-fp"}')
