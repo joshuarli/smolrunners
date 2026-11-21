@@ -82,6 +82,14 @@ export function alignedChart(series, metrics) {
   };
 }
 
+export function chartData(bundle, metrics) {
+  if (bundle === null || typeof bundle !== 'object') {
+    throw new TypeError('chartData needs a resolved job bundle, not a resource getter');
+  }
+  const aligned = alignedChart(bundle.series, metrics);
+  return [aligned.x, ...aligned.columns];
+}
+
 export function selectChartSeries(series, metrics) {
   const groups = groupSeries(series);
   return metrics

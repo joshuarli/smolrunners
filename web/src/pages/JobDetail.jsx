@@ -1,10 +1,10 @@
-import { createResource, For, Match, Show, Switch } from 'solid-js';
+import { createEffect, createResource, For, Match, onCleanup, Show, Switch } from 'solid-js';
 
 import { api } from '../api.js';
 import Chart from '../components/Chart.jsx';
 import {
   activityOverlays,
-  alignedChart,
+  chartData,
   formatBytes,
   formatNumber,
   lifecycleEvents,
@@ -35,17 +35,31 @@ async function loadJob(id) {
   };
 }
 
-function chartData(bundle, metrics) {
-  const aligned = alignedChart(bundle.series, metrics);
-  return [aligned.x, ...aligned.columns];
-}
+const ACTIVE_STATES = new Set(['queued', 'reserved', 'busy']);
 
 function timeLabel(ms) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '<missing>';
 }
 
 export default function JobDetail(props) {
-  const [bundle] = createResource(() => props.id, loadJob);
+  const [bundle, { refetch }] = createResource(() => props.id, loadJob);
+  let pollTimer;
+  const stopPolling = () => {
+    if (pollTimer !== undefined) {
+      clearInterval(pollTimer);
+      pollTimer = undefined;
+    }
+  };
+  createEffect(() => {
+    if (ACTIVE_STATES.has(bundle()?.job?.state)) {
+      if (pollTimer === undefined) {
+        pollTimer = setInterval(() => refetch(), 1000);
+      }
+    } else {
+      stopPolling();
+    }
+  });
+  onCleanup(stopPolling);
   const limits = () => limitsFromProfile(bundle()?.profile);
   const overlays = () => activityOverlays(bundle()?.series ?? []);
   const events = () => lifecycleEvents(bundle()?.job ?? {});
@@ -101,30 +115,30 @@ export default function JobDetail(props) {
             <Chart
               title="CPU used vs allocated vCPUs"
               series={[{ label: 'cores used', color: COLORS[0] }]}
-              data={chartData(bundle, ['cpu.busy_cores'])}
+              data={chartData(bundle(), ['cpu.busy_cores'])}
               limit={limits()?.vcpu}
               overlays={overlayTimes()}
             />
             <Chart
               title="Memory used vs profile limit"
               series={[{ label: 'guest used', color: COLORS[1] }, { label: 'workload cgroup', color: COLORS[2] }]}
-              data={chartData(bundle, ['mem.used_bytes', 'cgroup.memory.current'])}
+              data={chartData(bundle(), ['mem.used_bytes', 'cgroup.memory.current'])}
               limit={limits()?.memoryBytes}
             />
             <Chart
               title="I/O throughput"
               series={[{ label: 'disk read', color: COLORS[0] }, { label: 'disk write', color: COLORS[1] }]}
-              data={chartData(bundle, ['disk.read_bytes_delta', 'disk.write_bytes_delta'])}
+              data={chartData(bundle(), ['disk.read_bytes_delta', 'disk.write_bytes_delta'])}
             />
             <Chart
               title="Network throughput"
               series={[{ label: 'rx', color: COLORS[2] }, { label: 'tx', color: COLORS[3] }]}
-              data={chartData(bundle, ['net.rx_bytes_delta', 'net.tx_bytes_delta'])}
+              data={chartData(bundle(), ['net.rx_bytes_delta', 'net.tx_bytes_delta'])}
             />
             <Chart
               title="Host pressure (some, cumulative)"
               series={[{ label: 'cpu', color: COLORS[0] }, { label: 'memory', color: COLORS[1] }]}
-              data={chartData(bundle, ['host.pressure.cpu.some_total', 'host.pressure.memory.some_total'])}
+              data={chartData(bundle(), ['host.pressure.cpu.some_total', 'host.pressure.memory.some_total'])}
             />
           </div>
 

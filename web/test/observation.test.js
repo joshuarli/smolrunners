@@ -5,6 +5,7 @@ import {
   GIB,
   activityOverlays,
   alignedChart,
+  chartData,
   chartPoints,
   formatBytes,
   groupSeries,
@@ -62,6 +63,15 @@ test('chart columns align on the primary sample sequence', () => {
   const aligned = alignedChart(series, ['mem.used_bytes', 'cpu.busy_cores']);
   assert.deepEqual(aligned.x, [100, 200]);
   assert.deepEqual(aligned.columns, [[2 * GIB, 5 * GIB], [3.25, 1.5]]);
+});
+
+test('chart data is built from a resolved bundle, not a resource getter', () => {
+  const bundle = { series };
+  const [x, cpu] = chartData(bundle, ['cpu.busy_cores']);
+  assert.deepEqual(x, [100, 200, 300]);
+  assert.deepEqual(cpu, [3.25, 1.5, 0.5]);
+  assert.throws(() => chartData(() => bundle, ['cpu.busy_cores']), /resource getter/);
+  assert.deepEqual(chartData({ series: [] }, ['cpu.busy_cores']), [[], []]);
 });
 
 test('selected chart series keep only metrics with samples', () => {
