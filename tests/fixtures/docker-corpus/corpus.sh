@@ -112,13 +112,13 @@ note 'item 6: Testcontainers ryuk reaped the labeled canary container after clie
 
 note 'item 7: privileged docker:dind service with an inner daemon'
 dind_build=$(mktemp -d /work/dind-build.XXXXXX)
-for binary in dockerd docker containerd ctr runc docker-init; do
+for binary in dockerd docker containerd containerd-shim-runc-v2 ctr runc docker-init; do
   cp "/usr/local/bin/$binary" "$dind_build/$binary" || \
     fail "missing pinned binary for the local dind image: $binary"
 done
 cat > "$dind_build/Dockerfile" <<'EOF'
 FROM alpine:3.24
-COPY dockerd docker containerd ctr runc docker-init /usr/local/bin/
+COPY dockerd docker containerd containerd-shim-runc-v2 ctr runc docker-init /usr/local/bin/
 RUN mkdir -p /var/lib/docker /run/containerd
 ENTRYPOINT ["dockerd"]
 CMD ["--iptables=false","--ip6tables=false","--userland-proxy=false","--bridge=none","--storage-driver=vfs"]
