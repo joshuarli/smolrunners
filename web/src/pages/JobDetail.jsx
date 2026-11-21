@@ -136,8 +136,8 @@ export default function JobDetail(props) {
               data={chartData(bundle(), ['net.rx_bytes_delta', 'net.tx_bytes_delta'])}
             />
             <Chart
-              title="Host pressure (some, cumulative)"
-              series={[{ label: 'cpu', color: COLORS[0] }, { label: 'memory', color: COLORS[1] }]}
+              title="Guest cgroup-root pressure (some, cumulative)"
+              series={[{ label: 'guest cpu', color: COLORS[0] }, { label: 'guest memory', color: COLORS[1] }]}
               data={chartData(bundle(), ['host.pressure.cpu.some_total', 'host.pressure.memory.some_total'])}
             />
           </div>
