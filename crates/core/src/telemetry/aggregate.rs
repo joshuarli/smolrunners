@@ -10,7 +10,7 @@ pub struct Rate {
 }
 
 pub fn delta(previous: &Sample, current: &Sample, name: &str) -> Option<f64> {
-    if previous.identity() != current.identity() {
+    if previous.version != current.version || previous.identity() != current.identity() {
         return None;
     }
     let before = previous.metric(name)?;
