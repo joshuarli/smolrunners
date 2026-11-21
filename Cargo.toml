@@ -25,6 +25,9 @@ laputa-async-net = { version = "=0.3.0", registry = "mycrates" }
 laputa-async-executor = { version = "=0.3.0", registry = "mycrates" }
 rusqlite = { version = "0.43", features = ["bundled"] }
 rustix = { package = "laputa-rustix", version = "=1.1.6", registry = "mycrates" }
+rustls = "0.23"
+rustls-pemfile = "2"
+rcgen = "0.14"
 
 [profile.release]
 strip = true
