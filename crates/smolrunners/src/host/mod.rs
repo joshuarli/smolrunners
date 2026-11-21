@@ -1,5 +1,6 @@
 mod agent;
 mod boundary;
+mod cache;
 mod config;
 mod environment;
 mod marker;
