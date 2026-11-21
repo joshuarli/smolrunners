@@ -5,7 +5,7 @@ smolrunners is one coordinator with SQLite and one or more host agents that may 
 | Component | Language | Responsibility |
 | --- | --- | --- |
 | `crates/core` | Rust | domain, store, ledger, lifecycle, adapter protocol codec, telemetry aggregation, cache, sizing |
-| `crates/smolrunners` | Rust | `serve`, `host` and the operator CLI over an h12tiny HTTP API |
+| `crates/smolrunners` | Rust | `serve`, `host` and the operator CLI over a `std::net` HTTP API |
 | `crates/launcher` | Rust | narrow privileged per-job UID, cgroup and network setup |
 | `crates/collector` | Rust | static musl 1 Hz guest sampler (`std` and `rustix` only) |
 | `adapter/` | Go | scale-set `listener.Client`, framed stdio protocol, fake broker |
@@ -21,3 +21,17 @@ images, measurements, history and operator access.
 
 The nested development host is one `sr-dev` machine under smolvm on the Mac. Multi-host work uses
 `sr-coord`, `sr-host-a` and `sr-host-b` on one `sr-net` network, within 12 vCPUs and 24 GiB.
+
+## Current integration boundary
+
+The API's control records live in `state.json`, while sample history lives in SQLite. The core
+store, ledger and lifecycle are exercised by component gates but are not yet the running
+coordinator's authority, and `serve` does not supervise the adapter or execute jobs. The `INT1`
+milestone connects those paths so one local job runs through the production coordinator and host
+with live telemetry and recovery after a coordinator restart. Until it is accepted, component
+gates are evidence that a piece works, not that the product is connected.
+
+The transport deviation above is deliberate: the pinned `h12tiny` crates compiled empty without
+protocol features, and enabling `http1` exceeded the cold-build bound. The API uses `std::net`
+directly. The mounted-`TcpListener`/`TcpStream` transport does not provide mTLS; the fleet
+enrollment claim is reopened for that reason.

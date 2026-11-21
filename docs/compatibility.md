@@ -9,8 +9,26 @@ until NE2 passes on native x86_64 hardware. Native `smol-alpine…` labels stay 
 NE1 passes the native Alpine corpus.
 
 The transparent Actions cache v2 adapter is out of scope because evaluating it needs live GitHub.
-Normal GitHub cache and artifact endpoints remain. The full Debian-versus-`ubuntu-latest` corpus
-and its remedies are written up when F2 lands.
+Normal GitHub cache and artifact endpoints remain.
+
+## Debian 13 versus `ubuntu-latest`
+
+There is no measured Debian-versus-`ubuntu-latest` corpus in this campaign. O1 forbids live
+GitHub jobs, so the comparison is a prerequisite for owner qualification, not a local pass. The
+gaps already established from pinned inputs and local evidence are:
+
+| Gap | Local evidence | Remedy | Status |
+| --- | --- | --- | --- |
+| The pinned official runner targets .NET 8, retired 2026-11-10. | `docs/upstream-evidence.md` records the target for `runner-linux-arm64`; upstream PR #4757 moves it to .NET 10 and is open. | Retarget and qualify a pinned .NET 10 runner. | Local musl build measured under D13; native execution parked. |
+| Native Alpine runner needs musl C++ runtime, ICU and musl Node inputs. | `Native Alpine executor (D13)` below. | Parent pins the Alpine package closure and a musl Node build, then L2 retries. | Parked. |
+| Debian-versus-Ubuntu system package and toolchain differences in real workflows. | No local corpus; the fixture workloads run on pinned Debian 13. | Owner runs the live corpus and records per-workflow deltas. | NE1. |
+| x86_64 image and runner behavior. | Pinned x86_64 inputs are fetched but unqualified locally. | Native x86_64 host qualification. | NE2. |
+| Full Docker networking and overlayfs parity in the Alpine container path. | `image_alpine.sh` proves boot, collection and a simple container with `vfs` and iptables disabled. | Separate DinD/network parity evidence. | Local gap. |
+
+Unsupported features are the D12 deferrals in `smolrunners-campaign.md`: the transparent cache v2
+adapter, a lean replacement executor, live resizing, RAM forks, cross-host cache replication,
+remote builders, lazy image formats, the enhanced checkout action, on-demand code-level profiling,
+and OTLP/Prometheus export.
 
 The official runner v2.338.2 targets .NET 8, which went out of support on 2026-11-10. The .NET 10
 change is upstream PR #4757 and is still open; the bundled target is recorded in job history.
