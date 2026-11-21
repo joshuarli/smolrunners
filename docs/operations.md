@@ -38,10 +38,14 @@ control-plane records and `telemetry.sqlite` for sample history. Both are create
 `SMOLRUNNERS_STATE_DIR` and `SMOLRUNNERS_API_URL` provide the defaults when the flags or
 environment are absent.
 
-As this revision, the API's control state is still `state.json` with a temporary-file write and
-rename, and the core store, ledger and lifecycle are not yet the coordinator's authority. Treat a
-running `serve` as a component under integration until `INT1` is accepted; do not rely on it for
-durable admission decisions.
+For fleet enrollment, add `--tls-ca CA.pem --tls-cert server.pem --tls-key server.key`. On that
+path the listener requires a verified client certificate and derives host identity from it; a
+caller cannot declare its identity in the body. Generate a test CA and certificates with
+`tests/cli/generate-certs.sh`; no private keys are committed. Without the TLS flags the listener
+is plain HTTP and reports `mtls: false` — use it only for loopback operator commands.
+
+The connected coordinator (`serve --scenario …`) is built from current source by
+`make test-vm T=connected_job` and uses the core store, ledger and lifecycle as authority.
 
 The nested Linux host is separate from the coordinator:
 

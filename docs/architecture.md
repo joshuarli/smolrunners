@@ -33,5 +33,8 @@ gates are evidence that a piece works, not that the product is connected.
 
 The transport deviation above is deliberate: the pinned `h12tiny` crates compiled empty without
 protocol features, and enabling `http1` exceeded the cold-build bound. The API uses `std::net`
-directly. The mounted-`TcpListener`/`TcpStream` transport does not provide mTLS; the fleet
-enrollment claim is reopened for that reason.
+directly. With `--tls-ca`, `--tls-cert` and `--tls-key`, the listener wraps those streams in
+rustls and requires a verified client certificate; peer identity comes from the certificate's
+common name, never from a request body. Without those flags the listener stays plain HTTP on
+loopback and reports `transport: plain-http` with `mtls: false`. The fleet gate runs the TLS
+path; local operator commands and the connected coordinator use plain HTTP.
