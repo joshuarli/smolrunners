@@ -1,9 +1,12 @@
+mod host;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let command = std::env::args().nth(1);
-    match command.as_deref() {
-        Some("serve" | "host") => ExitCode::SUCCESS,
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(String::as_str) {
+        Some("serve") => ExitCode::SUCCESS,
+        Some("host") => host::run(&args[2..]),
         Some("--version" | "-V") => {
             println!("smolrunners {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
