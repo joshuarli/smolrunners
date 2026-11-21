@@ -108,6 +108,16 @@ pub struct JobRecord {
     pub job_key: String,
     pub name: String,
     pub profile: String,
+    #[serde(default)]
+    pub profile_revision_id: String,
+    #[serde(default)]
+    pub allocated_vcpu: u16,
+    #[serde(default)]
+    pub allocated_memory_gib: u32,
+    #[serde(default)]
+    pub profile_arch: String,
+    #[serde(default)]
+    pub profile_image: String,
     pub state: String,
     pub host_id: Option<i64>,
     pub labels: Vec<String>,
@@ -598,6 +608,7 @@ impl State {
         }
         let id = self.next_id();
         let execution_attempt_id = self.next_id();
+        let resolved = self.data.profiles.iter().find(|record| record.name == profile);
         let job = JobRecord {
             id,
             execution_attempt_id,
@@ -606,6 +617,13 @@ impl State {
             job_key: job_key.to_owned(),
             name: job_key.to_owned(),
             profile: profile.to_owned(),
+            profile_revision_id: resolved.map(|record| record.revision_id.clone()).unwrap_or_default(),
+            allocated_vcpu: resolved.map(|record| record.vcpu).unwrap_or(0),
+            allocated_memory_gib: resolved.map(|record| record.memory_gib).unwrap_or(0),
+            profile_arch: resolved.map(|record| record.arch.clone()).unwrap_or_default(),
+            profile_image: resolved
+                .map(|record| format!("{}{}", record.distro, record.release))
+                .unwrap_or_default(),
             state: "reserved".to_owned(),
             host_id: None,
             labels,
@@ -773,5 +791,70 @@ impl State {
             );
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let sequence = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "smolrunners-state-{}-{sequence}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp state dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn demand_freezes_the_resolved_profile_revision_and_allocation() {
+        let dir = TestDir::new();
+        let mut state = State::open(&dir.0).expect("open state");
+        state.data.profiles.push(ProfileRecord {
+            name: "balanced".to_owned(),
+            revision_id: "rev-7".to_owned(),
+            revision_number: 7,
+            vcpu: 4,
+            memory_gib: 8,
+            family: None,
+            distro: "debian13".to_owned(),
+            release: "13".to_owned(),
+            arch: "arm64".to_owned(),
+            promoted: true,
+            applied_at_ms: 0,
+        });
+
+        let job = state
+            .record_demand("evt-1", 11, "fixture", "balanced", Vec::new(), 1_000)
+            .expect("record demand");
+        assert_eq!(job.profile_revision_id, "rev-7");
+        assert_eq!(job.allocated_vcpu, 4);
+        assert_eq!(job.allocated_memory_gib, 8);
+        assert_eq!(job.profile_arch, "arm64");
+        assert_eq!(job.profile_image, "debian1313");
+
+        state.data.profiles.clear();
+        let reloaded = State::open(&dir.0).expect("reopen state");
+        let persisted = reloaded.job(job.id).expect("persisted job");
+        assert_eq!(persisted.profile_revision_id, "rev-7");
+        assert_eq!(persisted.allocated_vcpu, 4);
     }
 }

@@ -23,7 +23,10 @@ async function loadJob(id) {
     api.explain(id),
   ]);
   const job = jobReply.data;
-  const profile = (profilesReply.data.profiles ?? []).find((entry) => entry.name === job.profile) ?? null;
+  const currentProfile = (profilesReply.data.profiles ?? []).find((entry) => entry.name === job.profile) ?? null;
+  const profile = job.allocated_vcpu && job.allocated_memory_gib
+    ? { vcpu: job.allocated_vcpu, memory_gib: job.allocated_memory_gib }
+    : currentProfile;
   return {
     job,
     profile,
@@ -77,7 +80,7 @@ export default function JobDetail(props) {
               <h1>{bundle().job.name} <span class="muted">#{bundle().job.id}</span></h1>
               <p>
                 <span class="badge">{bundle().job.state}</span>
-                <span class="muted">profile {bundle().job.profile}</span>
+                <span class="muted">profile {bundle().job.profile}{bundle().job.profile_revision_id ? ` rev ${bundle().job.profile_revision_id}` : ''}</span>
                 <span class="muted">host {bundle().job.host_id ?? '<missing>'}</span>
               </p>
               <p class="reason">Queue reason: {bundle().job.admission_reason}</p>

@@ -58,9 +58,12 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
         let (Some(start), Some(finish)) = (job.start_at_ms, job.finish_at_ms) else {
             continue;
         };
-        let Some(profile) = state.data.profiles.iter().find(|record| record.name == job.profile) else {
+        if job.profile_revision_id.is_empty()
+            || job.allocated_vcpu == 0
+            || job.allocated_memory_gib == 0
+        {
             continue;
-        };
+        }
         let rows = state.sample_rows_for(job.execution_attempt_id);
         if rows.is_empty() || finish <= start {
             continue;
@@ -104,7 +107,7 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
         } else {
             memory_sum / memory_samples as f64
         };
-        let shape = Shape::new(profile.vcpu, profile.memory_gib).unwrap_or_else(|_| {
+        let shape = Shape::new(job.allocated_vcpu, job.allocated_memory_gib).unwrap_or_else(|_| {
             Shape::new(1, 1).expect("a minimal shape is always valid")
         });
         let outcome = match job.result.as_deref().unwrap_or("") {
@@ -127,14 +130,14 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
                 "workflow",
                 job.name.clone(),
                 job.labels.join(","),
-                format!("{}{}", profile.distro, profile.release),
+                job.profile_image.clone(),
                 if job.labels.iter().any(|label| label.contains("fixture")) {
                     Executor::Fixture
                 } else {
                     Executor::OfficialRunner
                 },
-                profile.revision_id.clone(),
-                profile.arch.clone(),
+                job.profile_revision_id.clone(),
+                job.profile_arch.clone(),
                 CacheState::Cold,
             ),
             outcome,
@@ -779,6 +782,11 @@ mod tests {
             job_key: "key-1".to_owned(),
             name: "fixture".to_owned(),
             profile: "p".to_owned(),
+            profile_revision_id: "rev-1".to_owned(),
+            allocated_vcpu: 4,
+            allocated_memory_gib: 8,
+            profile_arch: "arm64".to_owned(),
+            profile_image: "debian1313".to_owned(),
             state: "done".to_owned(),
             host_id: Some(1),
             labels: Vec::new(),
@@ -807,6 +815,29 @@ mod tests {
         assert_eq!(run.coverage_fraction, 1.0);
         assert!((run.mean_cpu_cores() - 2.0).abs() < 1e-9, "{}", run.mean_cpu_cores());
         assert!((run.mean_memory_gib() - 2.0).abs() < 1e-9, "{}", run.mean_memory_gib());
+    }
+
+    #[test]
+    fn sizing_keeps_the_revision_and_allocation_the_execution_resolved() {
+        let (_dir, mut state) = test_state();
+        seed(&mut state);
+        for sequence in 1..=4 {
+            state.ingest_sample(sample(sequence, true), 1, Some(1)).expect("ingest");
+        }
+        let before = sizing_runs(&state);
+        assert_eq!(before.len(), 1);
+
+        let current = state.data.profiles.first_mut().expect("profile");
+        current.revision_id = "rev-2".to_owned();
+        current.vcpu = 32;
+        current.memory_gib = 64;
+
+        let after = sizing_runs(&state);
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].key.profile_revision, "rev-1");
+        assert_eq!(after[0].shape.vcpu().get(), 4);
+        assert_eq!(after[0].integrals.allocated_memory_gib_seconds / after[0].wall_seconds, 8.0);
+        assert_eq!(after[0].integrals.allocated_cpu_core_seconds, before[0].integrals.allocated_cpu_core_seconds);
     }
 
     #[test]
