@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "image": "debian13",
+  "arch": "arm64",
+  "base_digest": "sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6",
+  "apt_snapshot": "20261104T212339Z",
+  "runner": "2.338.2",
+  "docker": "29.9.3",
+  "containerd": "v2.4.2",
+  "runc": "1.5.2",
+  "buildx": "v0.39.1",
+  "node20": "v20.20.2",
+  "node24": "v24.22.1",
+  "collector": "placeholder:tests/vm/bin/smolrunners-collector"
+}

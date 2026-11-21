@@ -1,0 +1,15 @@
+name = "debian-fixture"
+arch = "arm64"
+recipe = "build.sh"
+base = "images/debian13"
+
+[executor]
+path = "tests/fixtures/executor"
+target = "/opt/smolrunners/bin/executor"
+
+[hooks]
+started = "ACTIONS_RUNNER_HOOK_JOB_STARTED"
+completed = "ACTIONS_RUNNER_HOOK_JOB_COMPLETED"
+
+[phases]
+supported = ["cpu", "allocate", "io", "service"]

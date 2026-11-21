@@ -1,0 +1,114 @@
+#!/bin/sh
+set -u
+
+fail() { printf 'executor: %s\n' "$*" >&2; exit 1; }
+
+script=${1:?usage: executor SCRIPT [SERVICE_IMAGE]}
+service_image=${2:-nginx:alpine}
+work=${EXECUTOR_WORKDIR:-/work/tmp/fixture-executor}
+service_name="sr-fixture-service.$$"
+service_running=0
+alloc_path=/dev/shm/fixture-alloc.$$
+[ -d /dev/shm ] || alloc_path="$work/alloc.$$"
+io_path="$work/io.$$"
+mkdir -p "$work"
+
+cleanup() {
+  if [ "$service_running" -eq 1 ] && command -v docker >/dev/null 2>&1; then
+    docker rm -f "$service_name" >/dev/null 2>&1 || true
+  fi
+  rm -f "$alloc_path" "$io_path"
+}
+trap cleanup EXIT
+
+bounded_hook() {
+  hook=$1
+  shift
+  [ -n "$hook" ] || return 0
+  [ -x "$hook" ] || return 0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 2 "$hook" "$@" >/dev/null 2>&1 || true
+  else
+    "$hook" "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+require_seconds() {
+  case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$1" -gt 0 ] 2>/dev/null
+}
+
+phase_cpu() {
+  require_seconds "${1:-}" || fail "cpu: invalid seconds: ${1:-}"
+  seconds=$1
+  printf 'phase cpu begin\n'
+  yes > /dev/null 2>&1 &
+  burner=$!
+  sleep "$seconds"
+  kill "$burner" 2>/dev/null || true
+  wait "$burner" 2>/dev/null || true
+  printf 'phase cpu end\n'
+}
+
+phase_allocate() {
+  mib=${1:-}
+  seconds=${2:-}
+  case "$mib" in ''|*[!0-9]*) fail "allocate: invalid MiB: $mib" ;; esac
+  require_seconds "$seconds" || fail "allocate: invalid seconds: $seconds"
+  printf 'phase allocate begin\n'
+  dd if=/dev/zero of="$alloc_path" bs=1M count="$mib" status=none
+  sleep "$seconds"
+  rm -f "$alloc_path"
+  printf 'phase allocate end\n'
+}
+
+phase_io() {
+  mib=${1:-}
+  seconds=${2:-}
+  case "$mib" in ''|*[!0-9]*) fail "io: invalid MiB: $mib" ;; esac
+  require_seconds "$seconds" || fail "io: invalid seconds: $seconds"
+  printf 'phase io begin\n'
+  dd if=/dev/zero of="$io_path" bs=1M count="$mib" status=none
+  end=$(( $(date +%s) + seconds ))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    dd if="$io_path" of=/dev/null bs=1M status=none
+  done
+  rm -f "$io_path"
+  printf 'phase io end\n'
+}
+
+phase_service() {
+  port=${1:-8080}
+  case "$port" in ''|*[!0-9]*) fail "service: invalid port: $port" ;; esac
+  command -v docker >/dev/null 2>&1 || fail 'service phase needs docker'
+  printf 'phase service begin\n'
+  docker run -d --rm --name "$service_name" -p "$port:80" "$service_image" >/dev/null
+  service_running=1
+  printf 'phase service end\n'
+}
+
+run_script() {
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    [ -z "$line" ] && continue
+    case "$line" in \#*) continue ;; esac
+    set -- $line
+    phase=$1
+    shift
+    case "$phase" in
+      cpu) phase_cpu "$@" ;;
+      allocate) phase_allocate "$@" ;;
+      io) phase_io "$@" ;;
+      service) phase_service "$@" ;;
+      *) fail "unknown phase: $phase" ;;
+    esac
+  done < "$script"
+}
+
+[ -f "$script" ] || fail "missing script: $script"
+bounded_hook "$ACTIONS_RUNNER_HOOK_JOB_STARTED"
+status=0
+run_script || status=$?
+bounded_hook "$ACTIONS_RUNNER_HOOK_JOB_COMPLETED" "$status"
+printf 'executor: status=%s\n' "$status"
+exit "$status"
