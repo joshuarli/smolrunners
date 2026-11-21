@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -67,23 +68,42 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
         let wall_seconds = (finish - start) as f64 / 1000.0;
         let mut peak_cpu = 0.0f64;
         let mut cpu_sum = 0.0f64;
+        let mut cpu_samples = 0u32;
         let mut peak_memory_gib = 0.0f64;
         let mut memory_sum = 0.0f64;
-        let mut samples = 0u32;
+        let mut memory_samples = 0u32;
+        let mut captures: BTreeMap<i64, (bool, bool)> = BTreeMap::new();
         for row in &rows {
-            samples += 1;
             match row.metric.as_str() {
                 "cpu.busy_cores" => {
                     peak_cpu = peak_cpu.max(row.value);
                     cpu_sum += row.value;
+                    cpu_samples += 1;
+                    captures.entry(row.sequence).or_insert((false, false)).0 = true;
                 }
                 "mem.used_bytes" => {
                     peak_memory_gib = peak_memory_gib.max(row.value / (1024.0 * 1024.0 * 1024.0));
                     memory_sum += row.value / (1024.0 * 1024.0 * 1024.0);
+                    memory_samples += 1;
+                    captures.entry(row.sequence).or_insert((false, false)).1 = true;
                 }
                 _ => {}
             }
         }
+        let sample_count = captures.len() as u32;
+        let complete = captures.values().filter(|(cpu, memory)| *cpu && *memory).count() as u32;
+        let coverage_fraction = if sample_count == 0 {
+            0.0
+        } else {
+            complete as f64 / sample_count as f64
+        };
+        let gap_count = sample_count - complete;
+        let mean_cpu = if cpu_samples == 0 { 0.0 } else { cpu_sum / cpu_samples as f64 };
+        let mean_memory = if memory_samples == 0 {
+            0.0
+        } else {
+            memory_sum / memory_samples as f64
+        };
         let shape = Shape::new(profile.vcpu, profile.memory_gib).unwrap_or_else(|_| {
             Shape::new(1, 1).expect("a minimal shape is always valid")
         });
@@ -126,17 +146,17 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
             },
             integrals: Integrals {
                 allocated_cpu_core_seconds: shape.vcpu().get() as f64 * wall_seconds,
-                consumed_cpu_core_seconds: cpu_sum * wall_seconds / samples as f64,
+                consumed_cpu_core_seconds: mean_cpu * wall_seconds,
                 allocated_memory_gib_seconds: shape.memory_gib() as f64 * wall_seconds,
-                consumed_memory_gib_seconds: memory_sum * wall_seconds / samples as f64,
+                consumed_memory_gib_seconds: mean_memory * wall_seconds,
             },
             peak_cpu_cores: peak_cpu,
             peak_memory_gib,
             shape,
             wall_seconds,
-            sample_count: samples,
-            coverage_fraction: 1.0,
-            gap_count: 0,
+            sample_count,
+            coverage_fraction,
+            gap_count,
             definition_id: "sample-v1".to_owned(),
             cohort: rows.first().map(|row| row.cohort).unwrap_or_default(),
         });
@@ -667,5 +687,141 @@ fn dispatch(
             }
         }
         _ => Err((404, "not_found", "unknown route".to_owned())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use smolrunners_core::telemetry::{Metric, Sample, Scope, Unit};
+
+    use super::*;
+    use crate::api::{JobRecord, ProfileRecord};
+
+    static NEXT_STATE: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let sequence = NEXT_STATE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "smolrunners-sizing-{}-{sequence}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp state dir");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_state() -> (TestDir, State) {
+        let dir = TestDir::new();
+        let state = State::open(dir.path()).expect("open state");
+        (dir, state)
+    }
+
+    fn sample(sequence: u64, complete: bool) -> Sample {
+        let mut metrics = vec![
+            Metric { name: "cpu.busy_cores".to_owned(), value: 2.0, unit: Unit::Cores },
+            Metric { name: "net.rx_bytes_delta".to_owned(), value: 4096.0, unit: Unit::Bytes },
+        ];
+        if complete {
+            metrics.push(Metric {
+                name: "mem.used_bytes".to_owned(),
+                value: 2.0 * 1024.0 * 1024.0 * 1024.0,
+                unit: Unit::Bytes,
+            });
+        }
+        Sample {
+            version: 1,
+            scope: Scope::Guest,
+            sequence,
+            monotonic_ns: sequence * 1_000_000_000,
+            wall_unix_ms: 1_700_000_000_000 + sequence as i64 * 1000,
+            boot_id: "boot-a".to_owned(),
+            generation: 1,
+            metrics,
+        }
+    }
+
+    fn seed(state: &mut State) {
+        state.data.profiles.push(ProfileRecord {
+            name: "p".to_owned(),
+            revision_id: "rev-1".to_owned(),
+            revision_number: 1,
+            vcpu: 4,
+            memory_gib: 8,
+            family: None,
+            distro: "debian13".to_owned(),
+            release: "13".to_owned(),
+            arch: "arm64".to_owned(),
+            promoted: true,
+            applied_at_ms: 0,
+        });
+        state.data.jobs.push(JobRecord {
+            id: 1,
+            execution_attempt_id: 1,
+            protocol_job_id: "job-1".to_owned(),
+            request_id: 1,
+            job_key: "key-1".to_owned(),
+            name: "fixture".to_owned(),
+            profile: "p".to_owned(),
+            state: "done".to_owned(),
+            host_id: Some(1),
+            labels: Vec::new(),
+            demand_at_ms: 0,
+            start_at_ms: Some(1_000),
+            finish_at_ms: Some(11_000),
+            result: Some("success".to_owned()),
+            admission_reason: "ok".to_owned(),
+            github_url: None,
+        });
+        state.seed_context(1, 1).expect("seed context");
+    }
+
+    #[test]
+    fn sizing_averages_each_metric_by_its_own_samples() {
+        let (_dir, mut state) = test_state();
+        seed(&mut state);
+        for sequence in 1..=4 {
+            state.ingest_sample(sample(sequence, true), 1, Some(1)).expect("ingest");
+        }
+        let runs = sizing_runs(&state);
+        assert_eq!(runs.len(), 1);
+        let run = &runs[0];
+        assert_eq!(run.sample_count, 4);
+        assert_eq!(run.gap_count, 0);
+        assert_eq!(run.coverage_fraction, 1.0);
+        assert!((run.mean_cpu_cores() - 2.0).abs() < 1e-9, "{}", run.mean_cpu_cores());
+        assert!((run.mean_memory_gib() - 2.0).abs() < 1e-9, "{}", run.mean_memory_gib());
+    }
+
+    #[test]
+    fn sizing_reports_uncovered_captures_instead_of_inventing_completeness() {
+        let (_dir, mut state) = test_state();
+        seed(&mut state);
+        for sequence in 1..=4 {
+            state.ingest_sample(sample(sequence, sequence != 3), 1, Some(1)).expect("ingest");
+        }
+        let runs = sizing_runs(&state);
+        assert_eq!(runs.len(), 1);
+        let run = &runs[0];
+        assert_eq!(run.sample_count, 4);
+        assert_eq!(run.gap_count, 1);
+        assert!((run.coverage_fraction - 0.75).abs() < 1e-9);
+        assert!(run.has_missing_coverage());
     }
 }
