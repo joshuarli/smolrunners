@@ -9,8 +9,18 @@ manifest_src="$recipe_dir/manifest.json"
 
 fail() { printf 'image build: %s\n' "$*" >&2; exit 1; }
 pin() { sed -n "s/.*\"$1\": *\"\\([^\"]*\\)\".*/\\1/p" "$manifest_src" | head -1; }
+verify_digest() {
+  file=$1
+  digest=$2
+  expected=${digest#sha256:}
+  case "$expected" in
+    ''|*[!0-9a-fA-F]*) fail "invalid pinned digest: $digest" ;;
+  esac
+  actual=$(sha256sum "$file" | awk '{print $1}')
+  [ "$actual" = "$expected" ] || fail "digest mismatch for $(basename "$file"): want $expected, got $actual"
+}
 
-for tool in curl python3 tar dpkg-deb ldconfig apt-get; do
+for tool in curl python3 tar dpkg-deb ldconfig apt-get sha256sum; do
   command -v "$tool" >/dev/null 2>&1 || fail "missing tool: $tool"
 done
 
@@ -31,6 +41,7 @@ pull_base() {
   curl -fsSL --max-time 120 -H "Authorization: Bearer $token" \
     -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
     "$registry/v2/$repository/manifests/$base_digest" -o "$tmp/index.json"
+  verify_digest "$tmp/index.json" "$base_digest"
   plat_digest=$(python3 - "$tmp/index.json" <<'PY'
 import json
 import sys
@@ -48,6 +59,7 @@ PY
   curl -fsSL --max-time 120 -H "Authorization: Bearer $token" \
     -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
     "$registry/v2/$repository/manifests/$plat_digest" -o "$tmp/layers.json"
+  verify_digest "$tmp/layers.json" "$plat_digest"
   python3 - "$tmp/layers.json" > "$tmp/layers.txt" <<'PY'
 import json
 import sys
@@ -62,7 +74,9 @@ PY
       *) decoder=cat ;;
     esac
     curl -fsSL --max-time 300 -H "Authorization: Bearer $token" \
-      "$registry/v2/$repository/blobs/$layer_digest" | $decoder | tar -x -C "$rootfs"
+      "$registry/v2/$repository/blobs/$layer_digest" -o "$tmp/blob"
+    verify_digest "$tmp/blob" "$layer_digest"
+    $decoder < "$tmp/blob" | tar -x -C "$rootfs"
   done < "$tmp/layers.txt"
   [ -x "$rootfs/bin/sh" ] || fail 'base rootfs lacks /bin/sh'
 }
