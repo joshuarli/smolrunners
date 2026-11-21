@@ -194,6 +194,9 @@ note 'remount a wiped data root and start a fresh daemon'
 [ -e "$docker_dev" ] || mknod "$docker_dev" b "$dev_major" "$dev_minor" || true
 mount "$docker_dev" /var/lib/docker || fail 'data root remount failed'
 find /var/lib/docker -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+pkill -f 'containerd --config' 2>/dev/null || true
+rm -rf /run/containerd/containerd.sock /run/containerd/containerd.sock.ttrpc \
+  /run/containerd/containerd-debug.sock /work/dockerd.pid 2>/dev/null || true
 start_daemon wipe
 assert_data_root
 [ -z "$(docker ps -aq)" ] || fail 'prior containers appeared after reuse'
