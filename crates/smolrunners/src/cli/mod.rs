@@ -3,6 +3,8 @@ mod render;
 mod transport;
 
 use std::fs;
+use std::thread;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -44,6 +46,39 @@ fn send(
     let payload = body.map(|value| value.to_string());
     let reply = transport.send(method, path, payload.as_deref())?;
     render::render(reply, command, json, format)
+}
+
+fn follow_metrics(
+    transport: &dyn Transport,
+    id: &str,
+    json: bool,
+    format: Option<&str>,
+) -> Result<Output, String> {
+    follow_metrics_with(transport, id, json, format, Duration::from_secs(1), 1800)
+}
+
+fn follow_metrics_with(
+    transport: &dyn Transport,
+    id: &str,
+    json: bool,
+    format: Option<&str>,
+    interval: Duration,
+    max_polls: usize,
+) -> Result<Output, String> {
+    let mut metrics = transport.send("GET", &format!("/api/v1/jobs/{id}/metrics"), None)?;
+    for _ in 0..max_polls {
+        let state = transport.send("GET", &format!("/api/v1/jobs/{id}"), None)?;
+        let terminal = matches!(
+            state.data.get("state").and_then(Value::as_str),
+            Some("done" | "failed" | "cancelled" | "error")
+        );
+        if terminal {
+            break;
+        }
+        thread::sleep(interval);
+        metrics = transport.send("GET", &format!("/api/v1/jobs/{id}/metrics"), None)?;
+    }
+    render::render(metrics, "jobs metrics", json, format)
 }
 
 fn positional(parsed: &args::Parsed, index: usize) -> Option<&str> {
@@ -430,15 +465,19 @@ pub fn execute(args: &[String], transport: &dyn Transport) -> Result<Output, Str
         ),
         ["jobs", "metrics"] => {
             let id = resolve_job_id(transport, &parsed)?;
-            send(
-                transport,
-                "GET",
-                &format!("/api/v1/jobs/{id}/metrics"),
-                None,
-                "jobs metrics",
-                json,
-                format,
-            )
+            if parsed.has("follow") {
+                follow_metrics(transport, &id, json, format)
+            } else {
+                send(
+                    transport,
+                    "GET",
+                    &format!("/api/v1/jobs/{id}/metrics"),
+                    None,
+                    "jobs metrics",
+                    json,
+                    format,
+                )
+            }
         }
         ["jobs", "logs"] => Ok(logs_reply(&parsed)),
         ["jobs", "explain"] => {
@@ -507,4 +546,56 @@ fn resolve_job_id(transport: &dyn Transport, parsed: &args::Parsed) -> Result<St
         .and_then(|job| job.get("id"))
         .map(|id| id.to_string())
         .ok_or_else(|| "no jobs available; pass an id".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use serde_json::json;
+
+    use super::*;
+
+    struct FollowingTransport {
+        polls: Cell<usize>,
+        metric_reads: Cell<usize>,
+    }
+
+    impl Transport for FollowingTransport {
+        fn send(&self, method: &str, path: &str, _body: Option<&str>) -> Result<ApiReply, String> {
+            assert_eq!(method, "GET");
+            if path.ends_with("/metrics") {
+                let reads = self.metric_reads.get() + 1;
+                self.metric_reads.set(reads);
+                return Ok(ApiReply::new(200, "jobs metrics", json!({
+                    "samples": reads,
+                    "series": [],
+                })));
+            }
+            let poll = self.polls.get() + 1;
+            self.polls.set(poll);
+            let state = if poll < 3 { "busy" } else { "done" };
+            Ok(ApiReply::new(200, "jobs inspect", json!({ "state": state })))
+        }
+    }
+
+    #[test]
+    fn metrics_follow_polls_until_the_job_is_terminal() {
+        let transport = FollowingTransport {
+            polls: Cell::new(0),
+            metric_reads: Cell::new(0),
+        };
+        let output = follow_metrics_with(
+            &transport,
+            "7",
+            true,
+            None,
+            Duration::ZERO,
+            10,
+        )
+        .expect("follow metrics");
+        assert_eq!(transport.polls.get(), 3);
+        assert_eq!(transport.metric_reads.get(), 3);
+        assert!(output.stdout.contains("\"samples\": 3"), "{}", output.stdout);
+    }
 }

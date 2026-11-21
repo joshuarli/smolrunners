@@ -463,6 +463,7 @@ fn cli_jobs_metrics_follow_json_has_units_and_explicit_gaps() {
     .missing("gap", "sequence gap between samples 1 and 3");
     let transport = FixtureTransport::default()
         .route("GET", "/api/v1/jobs", jobs_reply)
+        .route("GET", "/api/v1/jobs/5", ApiReply::new(200, "jobs inspect", json!({ "state": "done" })))
         .route("GET", "/api/v1/jobs/5/metrics", metrics_reply);
     let args: Vec<String> = ["smolrunners", "jobs", "metrics", "--follow", "--json"]
         .iter()
