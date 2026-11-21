@@ -206,32 +206,33 @@ pub fn provision(
     marker::write(&config.state, &marker)
         .map_err(|error| format!("write marker: {error}"))?;
     println!("CLAIM {}", marker.machine);
-    let network_flag = if net_mode == "private" {
-        "--block-private"
-    } else {
-        "--allow-host-loopback"
-    };
+    let cpus_arg = cpus.to_string();
+    let memory_arg = memory.to_string();
+    let storage_arg = storage.to_string();
+    let overlay_arg = overlay.to_string();
+    let mut create_args: Vec<&str> = vec![
+        "machine",
+        "create",
+        "--name",
+        &marker.machine,
+        "-I",
+        image,
+    ];
+    if net_mode == "private" {
+        create_args.push("--block-private");
+    }
+    create_args.extend_from_slice(&[
+        "--cpus",
+        &cpus_arg,
+        "--mem",
+        &memory_arg,
+        "--storage",
+        &storage_arg,
+        "--overlay",
+        &overlay_arg,
+    ]);
     let smolvm = Smolvm::new(config);
-    smolvm.invoke(
-        &[
-            "machine",
-            "create",
-            "--name",
-            &marker.machine,
-            "-I",
-            image,
-            network_flag,
-            "--cpus",
-            &cpus.to_string(),
-            "--mem",
-            &memory.to_string(),
-            "--storage",
-            &storage.to_string(),
-            "--overlay",
-            &overlay.to_string(),
-        ],
-        Some(&marker.cgroup),
-    )?;
+    smolvm.invoke(&create_args, Some(&marker.cgroup))?;
 
     marker.phase = Phase::Created;
     marker::write(&config.state, &marker)
