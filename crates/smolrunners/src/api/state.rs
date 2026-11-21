@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,21 @@ fn fingerprint(value: &str) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn default_transport() -> String {
+    "plain-http".to_owned()
+}
+
+fn invitation_token(id: i64) -> Result<String, String> {
+    let mut random = [0u8; 32];
+    let mut source = fs::File::open("/dev/urandom")
+        .map_err(|error| format!("open /dev/urandom: {error}"))?;
+    source
+        .read_exact(&mut random)
+        .map_err(|error| format!("read /dev/urandom: {error}"))?;
+    let suffix: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!("sr-invite-{id}-{suffix}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +70,10 @@ pub struct HostRecord {
     pub key_fingerprint: String,
     pub cert_fingerprint: String,
     pub mtls: bool,
+    #[serde(default)]
+    pub certificate_declared: bool,
+    #[serde(default = "default_transport")]
+    pub transport: String,
     pub drain_revision: u64,
     pub revoked: bool,
     pub last_contact_ms: Option<i64>,
@@ -224,7 +244,7 @@ impl State {
         let id = self.next_id();
         let invitation = Invitation {
             id,
-            token: format!("sr-invite-{id}-{}", now_ms),
+            token: invitation_token(id)?,
             host_key: host_key.to_owned(),
             key_fingerprint: fingerprint(host_key),
             cert_fingerprint,
@@ -272,7 +292,7 @@ impl State {
             format!("arch={arch}"),
             format!("vcpu={total_vcpu}"),
             format!("memory_gib={total_memory_gib}"),
-            "mtls=true".to_owned(),
+            "transport=plain-http".to_owned(),
         ];
         if let Some(invitation) = self
             .data
@@ -299,7 +319,9 @@ impl State {
             host.capabilities = capabilities;
             host.key_fingerprint = key_fingerprint;
             host.cert_fingerprint = cert_fingerprint.to_owned();
-            host.mtls = true;
+            host.mtls = false;
+            host.certificate_declared = true;
+            host.transport = default_transport();
             host.revoked = false;
             host.last_contact_ms = Some(now_ms);
             host.drain_revision += 1;
@@ -320,7 +342,9 @@ impl State {
             capabilities,
             key_fingerprint,
             cert_fingerprint: cert_fingerprint.to_owned(),
-            mtls: true,
+            mtls: false,
+            certificate_declared: true,
+            transport: default_transport(),
             drain_revision: 0,
             revoked: false,
             last_contact_ms: Some(now_ms),
@@ -856,5 +880,24 @@ mod tests {
         let persisted = reloaded.job(job.id).expect("persisted job");
         assert_eq!(persisted.profile_revision_id, "rev-7");
         assert_eq!(persisted.allocated_vcpu, 4);
+    }
+
+    #[test]
+    fn invitations_are_unpredictable_and_plain_http_is_not_recorded_as_mtls() {
+        let dir = TestDir::new();
+        let mut state = State::open(&dir.0).expect("open state");
+        let first = state.create_invitation("host-a", Some("cert-a".to_owned()), 1_000).expect("invite a");
+        let second = state.create_invitation("host-b", Some("cert-b".to_owned()), 1_000).expect("invite b");
+        assert_ne!(first.token, second.token);
+        assert!(first.token.starts_with("sr-invite-"));
+        assert_eq!(first.token.len(), "sr-invite-".len() + first.id.to_string().len() + 1 + 64);
+
+        let host = state
+            .join_host(&first.token, "host-a", "arm64", 2, 4, "host-a", "cert-a", 2_000)
+            .expect("join a");
+        assert!(!host.mtls, "plain HTTP cannot be mTLS");
+        assert!(host.certificate_declared);
+        assert_eq!(host.transport, "plain-http");
+        assert!(host.capabilities.iter().any(|capability| capability == "transport=plain-http"));
     }
 }

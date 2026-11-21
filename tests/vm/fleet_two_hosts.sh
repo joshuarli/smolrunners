@@ -147,7 +147,7 @@ done
 out=$(call POST /init '{}')
 expect_status "$out" 200 'init'
 
-printf 'fleet_two_hosts: single-use invite, local key, fingerprint and mTLS\n'
+printf 'fleet_two_hosts: unpredictable single-use invite, local key and declared certificate\n'
 out=$(call POST /host/invite '{"host_key":"sr-host-a","cert_fingerprint":"cert-a-fp"}')
 expect_status "$out" 200 'invite host-a'
 token_a=$(body_of "$out" | field data.token)
@@ -173,7 +173,10 @@ expect_status "$out" 409 'reuse of consumed invite'
 inspect=$(inspect_host "$host_a_id" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["data"]))')
 [ "$(printf '%s' "$inspect" | field key_fingerprint)" = "$expected_fp" ] || fail 'joined host key fingerprint differs'
 [ "$(printf '%s' "$inspect" | field cert_fingerprint)" = 'cert-a-fp' ] || fail 'joined host certificate fingerprint differs'
-[ "$(printf '%s' "$inspect" | field mtls)" = 'True' ] || fail 'joined host did not record mTLS'
+[ "$(printf '%s' "$inspect" | field mtls)" = 'False' ] || fail 'plain HTTP must not be recorded as mTLS'
+[ "$(printf '%s' "$inspect" | field certificate_declared)" = 'True' ] || fail 'declared certificate was not recorded'
+[ "$(printf '%s' "$inspect" | field transport)" = 'plain-http' ] || fail 'transport was not recorded honestly'
+case "$token_a" in sr-invite-????????????????????????????????????????????????????????????????) ;; *) fail "invite token is not unpredictable: $token_a" ;; esac
 [ "$(printf '%s' "$inspect" | field incarnation)" = '1' ] || fail 'joined host incarnation'
 
 out=$(call POST /host/invite '{"host_key":"sr-host-b","cert_fingerprint":"cert-b-fp"}')
