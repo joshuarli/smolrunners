@@ -197,7 +197,7 @@ filler_size=$((avail - 4096))
 fallocate -l "$((filler_size * 1024))" /var/lib/docker/filler || \
   fail 'fallocate could not fill the data root'
 set +e
-docker pull hello-world > /work/diskfull.log 2>&1
+docker pull nginx:1.27-alpine > /work/diskfull.log 2>&1
 pull_code=$?
 set -e
 [ "$pull_code" -ne 0 ] || fail 'pull succeeded with a full data root'
