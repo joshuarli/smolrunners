@@ -140,7 +140,7 @@ docker volume rm sr-cold-vol >/dev/null
 rm -f /tmp/.docker/config.json
 [ -z "$(docker ps -aq)" ] || fail 'containers survived the drain'
 [ -z "$(docker volume ls -q)" ] || fail 'volumes survived the drain'
-docker_dev=$(awk '$2 == "/var/lib/docker" {print $1}' /proc/mounts)
+docker_dev=$(awk '$2 == "/var/lib/docker" {print $1}' /proc/mounts | head -1)
 [ -n "$docker_dev" ] || fail 'cannot resolve the docker data-root device'
 dev_name=${docker_dev##*/}
 dev_major=$(awk -v name="$dev_name" '$4 == name {print $1}' /proc/partitions | head -1)
