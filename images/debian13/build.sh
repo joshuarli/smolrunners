@@ -104,6 +104,7 @@ printf 'image build: fetching pinned inputs\n'
 runner_tgz=$(fetch_input runner-linux-arm64)
 docker_tgz=$(fetch_input docker-static-aarch64)
 buildx_bin=$(fetch_input buildx-linux-arm64)
+compose_bin=$(fetch_input compose-linux-arm64)
 node_xz=$(fetch_input node-linux-arm64)
 
 printf 'image build: installing components\n'
@@ -123,6 +124,8 @@ for binary in docker dockerd containerd runc ctr docker-init docker-proxy contai
 done
 cp "$buildx_bin" "$rootfs/usr/local/lib/docker/cli-plugins/docker-buildx"
 chmod 0755 "$rootfs/usr/local/lib/docker/cli-plugins/docker-buildx"
+cp "$compose_bin" "$rootfs/usr/local/lib/docker/cli-plugins/docker-compose"
+chmod 0755 "$rootfs/usr/local/lib/docker/cli-plugins/docker-compose"
 
 mkdir -p "$tmp/node"
 tar -xJf "$node_xz" -C "$tmp/node"
@@ -163,6 +166,8 @@ assert_version runc "$(pin runc)" \
   "$("$rootfs/usr/local/bin/runc" --version | head -1 | awk '{print $3}')"
 assert_version buildx "$(pin buildx)" \
   "$("$rootfs/usr/local/lib/docker/cli-plugins/docker-buildx" version | awk '{print $2}')"
+assert_version compose "$(pin compose)" \
+  "$("$rootfs/usr/local/lib/docker/cli-plugins/docker-compose" version --short | head -1)"
 assert_version node20 "$(pin node20)" \
   "$("$rootfs/opt/runner/externals/node20/bin/node" --version)"
 assert_version node24 "$(pin node24)" \

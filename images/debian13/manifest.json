@@ -9,6 +9,7 @@
   "containerd": "v2.4.2",
   "runc": "1.5.2",
   "buildx": "v0.39.1",
+  "compose": "v5.8.0",
   "node20": "v20.20.2",
   "node24": "v24.22.1",
   "collector": "placeholder:tests/vm/bin/smolrunners-collector"

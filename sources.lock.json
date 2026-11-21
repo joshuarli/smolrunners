@@ -123,6 +123,28 @@
       "purpose": "Buildx plugin for x64 guest Docker (NE2)"
     },
     {
+      "name": "compose-linux-arm64",
+      "version": "5.8.0",
+      "url": "https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-aarch64",
+      "sha256": "1a9c918b2fb49b9c87f0018c64b5abd0d30715155e98dc939779fbaee6c414d3",
+      "size": 32155346,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "build-tool",
+      "license": "Apache-2.0",
+      "purpose": "Compose v2 plugin for arm64 guest Docker"
+    },
+    {
+      "name": "compose-linux-x64",
+      "version": "5.8.0",
+      "url": "https://github.com/docker/compose/releases/download/v5.8.0/docker-compose-linux-x86_64",
+      "sha256": "b8840f5008c447f41fce0a57ae3adeab42c89b1eb6e6012524bcabbfb4ffbaf6",
+      "size": 34442228,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "build-tool",
+      "license": "Apache-2.0",
+      "purpose": "Compose v2 plugin for x64 guest Docker (NE2)"
+    },
+    {
       "name": "scaleset-sdk",
       "version": "716908e507993947ada4273aecf2361c02e5836c",
       "url": "https://codeload.github.com/actions/scaleset/tar.gz/716908e507993947ada4273aecf2361c02e5836c",

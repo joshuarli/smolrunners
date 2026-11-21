@@ -8,7 +8,7 @@ start_daemon wipe
 assert_data_root
 
 pull_pids=''
-for image in registry:2 alpine:3.24 docker:29.9.3-cli testcontainers/ryuk:0.11.0; do
+for image in registry:2 alpine:3.24 testcontainers/ryuk:0.11.0; do
   docker pull -q "$image" >/dev/null 2>&1 &
   pull_pids="$pull_pids $!"
 done
@@ -61,13 +61,6 @@ grep -q CACHED /work/build2.log || \
 note "item 2: BuildKit built an image and the second buildx build reused cache ($(docker buildx version | head -1))"
 
 note 'item 6: Compose'
-docker pull -q docker:29.9.3-cli >/dev/null
-toolbox=$(docker create docker:29.9.3-cli true)
-mkdir -p /usr/local/lib/docker/cli-plugins
-docker cp "$toolbox:/usr/local/libexec/docker/cli-plugins/docker-compose" \
-  /usr/local/lib/docker/cli-plugins/docker-compose >/dev/null
-chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
-docker rm -f "$toolbox" >/dev/null
 compose_version=$(docker compose version)
 case "$compose_version" in *'Docker Compose version v'*) ;; *) fail "compose plugin unavailable: $compose_version" ;; esac
 mkdir -p /work/compose

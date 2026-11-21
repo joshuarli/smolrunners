@@ -92,6 +92,10 @@ if command -v ss >/dev/null 2>&1; then
     fail 'the host has a listener on port 18080'
 fi
 
+for name in $(smolvm machine ls 2>/dev/null | awk '$1 ~ /^sr-/ {print $1}'); do
+  smolvm machine stop --name "$name" >/dev/null 2>&1 || true
+  smolvm machine delete --name "$name" -f >/dev/null 2>&1 || true
+done
 leftovers="$(smolvm machine ls 2>/dev/null | awk '$1 ~ /^sr-/ {print $1}')"
 [ -z "$leftovers" ] || fail "leftover machines: $leftovers"
 
