@@ -1,0 +1,6 @@
+name = "balanced-4c8g"
+vcpu = 4
+memory_gib = 8
+distro = "debian"
+release = "13"
+arch = "arm64"

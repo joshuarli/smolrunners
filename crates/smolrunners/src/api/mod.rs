@@ -1,0 +1,62 @@
+mod http;
+mod routes;
+mod schema;
+mod state;
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+pub use http::{Request, Response, request as http_request};
+pub use schema::{API_SCHEMA_VERSION, ApiReply, JsonOutput};
+pub use state::{
+    CacheRecord, HostRecord, ImageRecord, Installation, Invitation, JobRecord, ProfileRecord, State,
+    StateData,
+};
+
+fn value(args: &[String], index: &mut usize, flag: &str) -> Result<String, String> {
+    *index += 1;
+    args.get(*index)
+        .cloned()
+        .ok_or_else(|| format!("{flag} requires a value"))
+}
+
+pub fn default_state_dir() -> PathBuf {
+    std::env::var_os("SMOLRUNNERS_STATE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(".work/api-state"))
+}
+
+pub fn server_url() -> String {
+    std::env::var("SMOLRUNNERS_API_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8787".to_owned())
+}
+
+pub fn serve(args: &[String]) -> Result<(), String> {
+    let mut listen = "127.0.0.1:8787".to_owned();
+    let mut state_dir = default_state_dir();
+    let mut index = 0usize;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--listen" => listen = value(args, &mut index, "--listen")?,
+            "--state-dir" => state_dir = PathBuf::from(value(args, &mut index, "--state-dir")?),
+            "--help" | "-h" => {
+                eprintln!("usage: smolrunners serve [--listen HOST:PORT] [--state-dir DIR]");
+                return Ok(());
+            }
+            other => return Err(format!("serve: unknown option {other}")),
+        }
+        index += 1;
+    }
+
+    let state = Arc::new(Mutex::new(State::open(&state_dir)?));
+    let handler = Arc::new(move |request: &Request| {
+        let reply = routes::route(request, &state);
+        let status = reply.status;
+        let body = serde_json::to_string(&reply).unwrap_or_else(|error| {
+            format!("{{\"status\":500,\"data\":{{\"code\":\"encode\",\"message\":\"{error}\"}}}}")
+        });
+        Response::json(status, body)
+    });
+    eprintln!("smolrunners api listening on {listen}");
+    http::serve(&listen, handler)
+}

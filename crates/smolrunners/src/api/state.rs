@@ -1,0 +1,538 @@
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use smolrunners_core::telemetry::{History, IngestContext, Sample, SCHEMA_VERSION};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Installation {
+    pub app_id: i64,
+    pub installation_id: i64,
+    pub account_login: String,
+    pub scope: String,
+    pub runner_group: String,
+    pub fake: bool,
+    pub connected_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invitation {
+    pub id: i64,
+    pub token: String,
+    pub host_key: String,
+    pub single_use: bool,
+    pub consumed: bool,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostRecord {
+    pub id: i64,
+    pub host_key: String,
+    pub hostname: String,
+    pub arch: String,
+    pub total_vcpu: u16,
+    pub total_memory_gib: u32,
+    pub admission_state: String,
+    pub incarnation: u64,
+    pub capabilities: Vec<String>,
+    pub last_contact_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileRecord {
+    pub name: String,
+    pub revision_id: String,
+    pub revision_number: u32,
+    pub vcpu: u16,
+    pub memory_gib: u32,
+    pub family: Option<String>,
+    pub distro: String,
+    pub release: String,
+    pub arch: String,
+    pub promoted: bool,
+    pub applied_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageRecord {
+    pub id: i64,
+    pub distro: String,
+    pub release: String,
+    pub arch: String,
+    pub digest: String,
+    pub qualified: bool,
+    pub promoted: bool,
+    pub built_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheRecord {
+    pub id: i64,
+    pub kind: String,
+    pub scope: String,
+    pub generation: u32,
+    pub lineage: Vec<String>,
+    pub size_bytes: u64,
+    pub pinned: bool,
+    pub active: bool,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobRecord {
+    pub id: i64,
+    pub execution_attempt_id: i64,
+    pub protocol_job_id: String,
+    pub request_id: i64,
+    pub job_key: String,
+    pub name: String,
+    pub profile: String,
+    pub state: String,
+    pub host_id: Option<i64>,
+    pub labels: Vec<String>,
+    pub demand_at_ms: i64,
+    pub start_at_ms: Option<i64>,
+    pub finish_at_ms: Option<i64>,
+    pub result: Option<String>,
+    pub admission_reason: String,
+    pub github_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StateData {
+    pub initialized: bool,
+    pub next_id: i64,
+    pub installation: Option<Installation>,
+    pub invitations: Vec<Invitation>,
+    pub hosts: Vec<HostRecord>,
+    pub profiles: Vec<ProfileRecord>,
+    pub images: Vec<ImageRecord>,
+    pub caches: Vec<CacheRecord>,
+    pub jobs: Vec<JobRecord>,
+}
+
+pub struct State {
+    pub data: StateData,
+    json_path: PathBuf,
+    db_path: PathBuf,
+    history: History,
+}
+
+impl State {
+    pub fn open(state_dir: &Path) -> Result<Self, String> {
+        fs::create_dir_all(state_dir).map_err(|error| format!("create state dir: {error}"))?;
+        let json_path = state_dir.join("state.json");
+        let db_path = state_dir.join("telemetry.sqlite");
+        let data = if json_path.exists() {
+            let raw = fs::read_to_string(&json_path)
+                .map_err(|error| format!("read state: {error}"))?;
+            serde_json::from_str(&raw).map_err(|error| format!("decode state: {error}"))?
+        } else {
+            StateData::default()
+        };
+        let history = History::open(&db_path).map_err(|error| format!("open history: {error}"))?;
+        Ok(Self {
+            data,
+            json_path,
+            db_path,
+            history,
+        })
+    }
+
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
+    }
+
+    pub fn persist(&self) -> Result<(), String> {
+        let raw = serde_json::to_string_pretty(&self.data)
+            .map_err(|error| format!("encode state: {error}"))?;
+        let temporary = self.json_path.with_extension("json.tmp");
+        fs::write(&temporary, raw).map_err(|error| format!("write state: {error}"))?;
+        fs::rename(&temporary, &self.json_path).map_err(|error| format!("commit state: {error}"))?;
+        Ok(())
+    }
+
+    pub fn next_id(&mut self) -> i64 {
+        let id = self.data.next_id;
+        self.data.next_id += 1;
+        id
+    }
+
+    pub fn init(&mut self) -> Result<(), String> {
+        self.data.initialized = true;
+        self.persist()
+    }
+
+    pub fn connect_github(
+        &mut self,
+        app_id: i64,
+        installation_id: i64,
+        account_login: &str,
+        now_ms: i64,
+    ) -> Result<Installation, String> {
+        let installation = Installation {
+            app_id,
+            installation_id,
+            account_login: account_login.to_owned(),
+            scope: "all".to_owned(),
+            runner_group: "default".to_owned(),
+            fake: true,
+            connected_at_ms: now_ms,
+        };
+        self.data.installation = Some(installation.clone());
+        self.persist()?;
+        Ok(installation)
+    }
+
+    pub fn create_invitation(
+        &mut self,
+        host_key: &str,
+        now_ms: i64,
+    ) -> Result<Invitation, String> {
+        let id = self.next_id();
+        let invitation = Invitation {
+            id,
+            token: format!("sr-invite-{id}-{}", now_ms),
+            host_key: host_key.to_owned(),
+            single_use: true,
+            consumed: false,
+            created_at_ms: now_ms,
+        };
+        self.data.invitations.push(invitation.clone());
+        self.persist()?;
+        Ok(invitation)
+    }
+
+    pub fn join_host(
+        &mut self,
+        token: &str,
+        hostname: &str,
+        arch: &str,
+        total_vcpu: u16,
+        total_memory_gib: u32,
+        now_ms: i64,
+    ) -> Result<HostRecord, String> {
+        let invitation = self
+            .data
+            .invitations
+            .iter_mut()
+            .find(|invitation| invitation.token == token && !invitation.consumed)
+            .ok_or_else(|| "invite_not_found_or_used".to_owned())?;
+        invitation.consumed = true;
+        let host_key = invitation.host_key.clone();
+        let id = self.next_id();
+        let host = HostRecord {
+            id,
+            host_key,
+            hostname: hostname.to_owned(),
+            arch: arch.to_owned(),
+            total_vcpu,
+            total_memory_gib,
+            admission_state: "eligible".to_owned(),
+            incarnation: 1,
+            capabilities: Vec::new(),
+            last_contact_ms: Some(now_ms),
+        };
+        self.data.hosts.push(host.clone());
+        self.persist()?;
+        Ok(host)
+    }
+
+    pub fn set_host_state(&mut self, id: i64, state: &str) -> Result<(String, String), String> {
+        let host = self
+            .data
+            .hosts
+            .iter_mut()
+            .find(|host| host.id == id)
+            .ok_or_else(|| "host_not_found".to_owned())?;
+        let previous = host.admission_state.clone();
+        host.admission_state = state.to_owned();
+        self.persist()?;
+        Ok((previous, state.to_owned()))
+    }
+
+    pub fn apply_profile(&mut self, record: ProfileRecord) -> Result<(), String> {
+        if let Some(existing) = self
+            .data
+            .profiles
+            .iter_mut()
+            .find(|profile| profile.name == record.name)
+        {
+            *existing = record;
+        } else {
+            self.data.profiles.push(record);
+        }
+        self.persist()
+    }
+
+    pub fn promote_profile(&mut self, name: &str) -> Result<(), String> {
+        let mut found = false;
+        for profile in &mut self.data.profiles {
+            if profile.name == name {
+                profile.promoted = true;
+                found = true;
+            } else {
+                profile.promoted = false;
+            }
+        }
+        if !found {
+            return Err("profile_not_found".to_owned());
+        }
+        self.persist()
+    }
+
+    pub fn image(&self, id: i64) -> Option<&ImageRecord> {
+        self.data.images.iter().find(|image| image.id == id)
+    }
+
+    pub fn build_image(
+        &mut self,
+        distro: &str,
+        release: &str,
+        arch: &str,
+        digest: &str,
+        now_ms: i64,
+    ) -> Result<ImageRecord, String> {
+        let id = self.next_id();
+        let image = ImageRecord {
+            id,
+            distro: distro.to_owned(),
+            release: release.to_owned(),
+            arch: arch.to_owned(),
+            digest: digest.to_owned(),
+            qualified: false,
+            promoted: false,
+            built_at_ms: now_ms,
+        };
+        self.data.images.push(image.clone());
+        self.persist()?;
+        Ok(image)
+    }
+
+    pub fn qualify_image(&mut self, id: i64, qualified: bool) -> Result<(), String> {
+        let image = self
+            .data
+            .images
+            .iter_mut()
+            .find(|image| image.id == id)
+            .ok_or_else(|| "image_not_found".to_owned())?;
+        image.qualified = qualified;
+        self.persist()
+    }
+
+    pub fn promote_image(&mut self, id: i64) -> Result<(), String> {
+        let image = self
+            .data
+            .images
+            .iter_mut()
+            .find(|image| image.id == id)
+            .ok_or_else(|| "image_not_found".to_owned())?;
+        if !image.qualified {
+            return Err("image_not_qualified".to_owned());
+        }
+        image.promoted = true;
+        self.persist()
+    }
+
+    pub fn add_cache(&mut self, cache: CacheRecord) -> Result<(), String> {
+        self.data.caches.push(cache);
+        self.persist()
+    }
+
+    pub fn job(&self, id: i64) -> Option<&JobRecord> {
+        self.data.jobs.iter().find(|job| job.id == id)
+    }
+
+    pub fn job_mut(&mut self, id: i64) -> Option<&mut JobRecord> {
+        self.data.jobs.iter_mut().find(|job| job.id == id)
+    }
+
+    pub fn record_demand(
+        &mut self,
+        protocol_job_id: &str,
+        request_id: i64,
+        job_key: &str,
+        profile: &str,
+        labels: Vec<String>,
+        now_ms: i64,
+    ) -> Result<JobRecord, String> {
+        if let Some(existing) = self
+            .data
+            .jobs
+            .iter()
+            .find(|job| job.protocol_job_id == protocol_job_id && job.request_id == request_id)
+        {
+            return Ok(existing.clone());
+        }
+        let id = self.next_id();
+        let execution_attempt_id = self.next_id();
+        let job = JobRecord {
+            id,
+            execution_attempt_id,
+            protocol_job_id: protocol_job_id.to_owned(),
+            request_id,
+            job_key: job_key.to_owned(),
+            name: job_key.to_owned(),
+            profile: profile.to_owned(),
+            state: "reserved".to_owned(),
+            host_id: None,
+            labels,
+            demand_at_ms: now_ms,
+            start_at_ms: None,
+            finish_at_ms: None,
+            result: None,
+            admission_reason: "profile matched advertised labels".to_owned(),
+            github_url: None,
+        };
+        self.data.jobs.push(job.clone());
+        self.persist()?;
+        Ok(job)
+    }
+
+    pub fn start_job(
+        &mut self,
+        id: i64,
+        host_id: i64,
+        now_ms: i64,
+    ) -> Result<JobRecord, String> {
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        job.state = "busy".to_owned();
+        job.host_id = Some(host_id);
+        job.start_at_ms = Some(now_ms);
+        Ok(job.clone())
+    }
+
+    pub fn finish_job(&mut self, id: i64, result: &str, now_ms: i64) -> Result<JobRecord, String> {
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        job.state = "done".to_owned();
+        job.result = Some(result.to_owned());
+        job.finish_at_ms = Some(now_ms);
+        Ok(job.clone())
+    }
+
+    pub fn attach_github(&mut self, id: i64, url: &str) -> Result<(), String> {
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        job.github_url = Some(url.to_owned());
+        self.persist()
+    }
+
+    pub fn seed_context(&self, execution_attempt_id: i64, host_id: i64) -> Result<(), String> {
+        let connection = smolrunners_core::store::open_connection(&self.db_path)
+            .map_err(|error| format!("open context connection: {error}"))?;
+        connection
+            .execute_batch(&format!(
+                "INSERT OR IGNORE INTO github_installation
+                    (id, installation_id, app_id, account_login, scope,
+                     runner_group_id, runner_group_name, created_at, updated_at)
+                 VALUES (1, 1, 1, 'cli-e2e', 'all', 1, 'rg', 'now', 'now');
+                 INSERT OR IGNORE INTO workflow_run
+                    (id, installation_id, repository, workflow_name,
+                     workflow_run_id, head_branch, created_at)
+                 VALUES (1, 1, 'o/r', 'wf', 1, 'main', 'now');
+                 INSERT OR IGNORE INTO workflow_run_attempt
+                    (id, workflow_run_id, attempt, created_at)
+                 VALUES (1, 1, 1, 'now');
+                 INSERT OR IGNORE INTO job
+                    (id, workflow_run_attempt_id, github_job_key, name, created_at)
+                 VALUES (1, 1, 'cli_e2e', 'cli-e2e', 'now');
+                 INSERT OR IGNORE INTO execution_attempt
+                    (id, job_id, attempt, state, started_at)
+                 VALUES ({execution_attempt_id}, 1, 1, 'busy', 'now');
+                 INSERT OR IGNORE INTO host
+                    (id, host_key, incarnation, hostname, arch, total_vcpu,
+                     total_memory_gib, total_disk_bytes, capabilities_json,
+                     admission_state, created_at)
+                 VALUES ({host_id}, 'host-{host_id}', 1, 'sr-host-a', 'arm64',
+                         4, 8, 1000, '{{}}', 'eligible', 'now');"
+            ))
+            .map_err(|error| format!("seed sample context: {error}"))
+    }
+
+    pub fn ingest_sample(
+        &mut self,
+        sample: Sample,
+        execution_attempt_id: i64,
+        host_id: Option<i64>,
+    ) -> Result<Value, String> {
+        let outcome = self
+            .history
+            .ingest(
+                sample,
+                IngestContext {
+                    host_id,
+                    execution_attempt_id: Some(execution_attempt_id),
+                },
+            )
+            .map_err(|error| format!("ingest sample: {error}"))?;
+        self.history
+            .flush()
+            .map_err(|error| format!("flush samples: {error}"))?;
+        Ok(json!({
+            "version": SCHEMA_VERSION,
+            "cohort": outcome.cohort.id(),
+            "gap": outcome.gap,
+            "gap_reason": outcome.gap_reason.map(|reason| format!("{reason:?}")),
+            "rates": outcome.rates.len(),
+        }))
+    }
+
+    pub fn metric_rows(&self, execution_attempt_id: i64) -> Result<Vec<Value>, String> {
+        let rows = self
+            .history
+            .rows_for(execution_attempt_id)
+            .map_err(|error| format!("read samples: {error}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "scope": row.scope,
+                    "metric": row.metric,
+                    "value": row.value,
+                    "unit": row.unit,
+                    "sequence": row.sequence,
+                    "captured_at": row.captured_at,
+                })
+            })
+            .collect())
+    }
+
+    pub fn host(&self, id: i64) -> Option<&HostRecord> {
+        self.data.hosts.iter().find(|host| host.id == id)
+    }
+
+    pub fn profile(&self, name: &str) -> Option<&ProfileRecord> {
+        self.data.profiles.iter().find(|profile| profile.name == name)
+    }
+
+    pub fn summary_by_job(&self) -> HashMap<i64, Value> {
+        let mut result = HashMap::new();
+        for job in &self.data.jobs {
+            let rows = self
+                .history
+                .rows_for(job.execution_attempt_id)
+                .unwrap_or_default();
+            let mut peak_cpu = 0.0f64;
+            let mut peak_memory = 0.0f64;
+            for row in &rows {
+                if row.metric == "cpu.busy_cores" && row.value > peak_cpu {
+                    peak_cpu = row.value;
+                }
+                if row.metric == "mem.used_bytes" && row.value > peak_memory {
+                    peak_memory = row.value;
+                }
+            }
+            result.insert(
+                job.id,
+                json!({
+                    "peak_cpu_cores": peak_cpu,
+                    "peak_memory_bytes": peak_memory,
+                    "samples": rows.len(),
+                }),
+            );
+        }
+        result
+    }
+}
