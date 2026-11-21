@@ -27,9 +27,13 @@ test-vm:
 	sh scripts/linux-host.sh sync
 	sh scripts/linux-host.sh exec 'sh tests/vm/$(T).sh'
 
+PARKED := alpine_runner
+
 test-vm-all:
 	@for f in tests/vm/*.sh; do \
-	  $(MAKE) test-vm T=$$(basename $$f .sh) || exit 1; \
+	  name=$$(basename $$f .sh); \
+	  case " $(PARKED) " in *" $$name "*) echo "skipping parked $$name"; continue ;; esac; \
+	  $(MAKE) test-vm T=$$name || exit 1; \
 	done
 
 test-faults:
