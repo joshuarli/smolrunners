@@ -232,7 +232,9 @@ fn read_frame<R: Read>(reader: &mut R) -> Result<Frame, String> {
     reader
         .read_exact(&mut body)
         .map_err(|error| format!("read frame body: {error}"))?;
-    proto::decode(&body).map_err(|error| error.to_string())
+    let mut framed = (body.len() as u32).to_be_bytes().to_vec();
+    framed.extend_from_slice(&body);
+    proto::decode(&framed).map_err(|error| error.to_string())
 }
 
 fn quote(value: &str) -> String {
