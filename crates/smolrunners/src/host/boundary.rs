@@ -114,8 +114,10 @@ fn proc_status(pid: u32, field: &str) -> Option<String> {
     let bytes = fs::read(format!("/proc/{pid}/status")).ok()?;
     let text = String::from_utf8_lossy(&bytes);
     for line in text.lines() {
-        if let Some(value) = line.strip_prefix(field) {
-            return Some(value.trim().to_string());
+        if let Some((key, value)) = line.split_once(':') {
+            if key == field {
+                return Some(value.split_whitespace().collect::<Vec<_>>().join(" "));
+            }
         }
     }
     None
@@ -286,10 +288,10 @@ pub fn evaluate(input: &BoundaryInput) -> Report {
         )),
     }
 
-    for (name, expected, default) in [
-        ("cpu_max", &input.cpu_max, "max 100000"),
-        ("memory_max", &input.memory_max, "max"),
-        ("pids_max", &input.pids_max, "max"),
+    for (name, file_name, expected, default) in [
+        ("cpu_max", "cpu.max", &input.cpu_max, "max 100000"),
+        ("memory_max", "memory.max", &input.memory_max, "max"),
+        ("pids_max", "pids.max", &input.pids_max, "max"),
     ] {
         if input.cgroup.is_empty() {
             checks.push(check(
@@ -300,9 +302,9 @@ pub fn evaluate(input: &BoundaryInput) -> Report {
             ));
             continue;
         }
-        let observed = cgroup_file(&input.cgroup, name);
+        let observed = cgroup_file(&input.cgroup, file_name);
         let evidence = json!({
-            "path": format!("{}/{}", input.cgroup, name),
+            "path": format!("{}/{}", input.cgroup, file_name),
             "expected": expected,
             "observed": observed,
             "default": default

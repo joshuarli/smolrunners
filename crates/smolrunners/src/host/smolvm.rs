@@ -85,13 +85,11 @@ impl<'a> Smolvm<'a> {
             .command(&owned, cgroup)
             .spawn()
             .map_err(|error| format!("spawn smolvm: {error}"))?;
-        let pid = child.id();
-        Ok(Running { child, pid })
+        Ok(Running { child })
     }
 }
 
 pub struct Running {
-    pub pid: u32,
     child: Child,
 }
 
