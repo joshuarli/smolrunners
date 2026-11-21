@@ -80,37 +80,27 @@ fn read_keyed_totals(path: impl AsRef<Path>, keys: &[&str]) -> Vec<u64> {
     totals
 }
 
-fn walk(path: &str, stats: &mut CgroupStats, take_memory: bool, budget: &mut usize) {
+fn walk(path: &str, stats: &mut CgroupStats, is_root: bool, budget: &mut usize) {
     if *budget == 0 {
         return;
     }
     *budget -= 1;
 
-    stats.cpu_usage_usec = stats
-        .cpu_usage_usec
-        .saturating_add(read_named(format!("{path}/cpu.stat"), "usage_usec"));
-    stats.cpu_nr_throttled = stats
-        .cpu_nr_throttled
-        .saturating_add(read_named(format!("{path}/cpu.stat"), "nr_throttled"));
-    stats.cpu_throttled_usec = stats
-        .cpu_throttled_usec
-        .saturating_add(read_named(format!("{path}/cpu.stat"), "throttled_usec"));
+    if is_root {
+        stats.cpu_usage_usec = read_named(format!("{path}/cpu.stat"), "usage_usec");
+        stats.cpu_nr_throttled = read_named(format!("{path}/cpu.stat"), "nr_throttled");
+        stats.cpu_throttled_usec = read_named(format!("{path}/cpu.stat"), "throttled_usec");
 
-    stats.memory_events_oom = stats
-        .memory_events_oom
-        .saturating_add(read_named(format!("{path}/memory.events"), "oom"));
-    stats.memory_events_oom_kill = stats
-        .memory_events_oom_kill
-        .saturating_add(read_named(format!("{path}/memory.events"), "oom_kill"));
-    stats.memory_events_max = stats
-        .memory_events_max
-        .saturating_add(read_named(format!("{path}/memory.events"), "max"));
+        stats.memory_events_oom = read_named(format!("{path}/memory.events"), "oom");
+        stats.memory_events_oom_kill = read_named(format!("{path}/memory.events"), "oom_kill");
+        stats.memory_events_max = read_named(format!("{path}/memory.events"), "max");
 
-    let io_totals = read_keyed_totals(format!("{path}/io.stat"), &["rbytes", "wbytes"]);
-    stats.io_read_bytes = stats.io_read_bytes.saturating_add(io_totals[0]);
-    stats.io_write_bytes = stats.io_write_bytes.saturating_add(io_totals[1]);
+        let io_totals = read_keyed_totals(format!("{path}/io.stat"), &["rbytes", "wbytes"]);
+        stats.io_read_bytes = io_totals[0];
+        stats.io_write_bytes = io_totals[1];
+    }
 
-    if take_memory {
+    if is_root {
         stats.memory_current = read_number(format!("{path}/memory.current"));
         stats.memory_peak = read_number(format!("{path}/memory.peak"));
         if stats.memory_peak < stats.memory_current {
@@ -147,3 +137,71 @@ pub fn host_stats() -> CgroupStats {
     walk(CGROUP_ROOT, &mut stats, true, &mut budget);
     stats
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+
+    struct TestRoot(PathBuf);
+
+    impl TestRoot {
+        fn new(label: &str) -> Self {
+            let sequence = NEXT_ROOT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "smolrunners-cgroup-{label}-{}-{sequence}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("create fake cgroup root");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write(path: impl AsRef<Path>, text: impl AsRef<str>) {
+        fs::write(path, text.as_ref()).expect("write fake cgroup file");
+    }
+
+    fn seed(root: &Path, usage: u64, oom: u64, read: u64) {
+        write(root.join("cpu.stat"), format!("usage_usec {usage}\nnr_throttled 0\nthrottled_usec 0\n"));
+        write(root.join("memory.events"), format!("low 0\nhigh 0\nmax 0\noom {oom}\noom_kill 0\n"));
+        write(root.join("io.stat"), format!("8:0 rbytes={read} wbytes=0\n"));
+        write(root.join("memory.current"), "1024\n");
+        write(root.join("memory.peak"), "2048\n");
+        write(root.join("memory.max"), "max\n");
+        write(root.join("memory.swap.current"), "0\n");
+        write(root.join("memory.stat"), "anon 100\nfile 200\n");
+    }
+
+    #[test]
+    fn hierarchical_counters_are_not_added_to_descendants() {
+        let root = TestRoot::new("hierarchy");
+        seed(root.path(), 100, 1, 1000);
+        let child = root.path().join("child.slice");
+        fs::create_dir_all(&child).expect("create child cgroup");
+        seed(&child, 900, 5, 9000);
+
+        let stats = workload_stats(root.path().to_str().expect("utf8 path"));
+        assert_eq!(stats.cpu_usage_usec, 100);
+        assert_eq!(stats.memory_events_oom, 1);
+        assert_eq!(stats.io_read_bytes, 1000);
+        assert_eq!(stats.descendant_count, 1);
+        assert_eq!(stats.memory_current, 1024);
+        assert_eq!(stats.memory_anon, 100);
+    }
+}
+
