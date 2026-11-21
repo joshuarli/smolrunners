@@ -1,0 +1,25 @@
+{
+  "name": "direct-job-assigned",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 1
+    }
+  },
+  "steps": [
+    {
+      "kind": "message",
+      "message_id": 200,
+      "job_assigned": [
+        {
+          "request_id": 201,
+          "job_id": "job-direct",
+          "labels": ["smol-debian13-arm64-4c8g"]
+        }
+      ]
+    },
+    { "kind": "nil" }
+  ],
+  "after_end": "nil"
+}

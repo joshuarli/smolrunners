@@ -1,0 +1,34 @@
+{
+  "name": "expired-assignment",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 1
+    }
+  },
+  "acquire_results": [],
+  "steps": [
+    {
+      "kind": "message",
+      "message_id": 500,
+      "job_available": [
+        {
+          "request_id": 501,
+          "job_id": "job-expired",
+          "labels": ["smol-debian13-arm64-4c8g"],
+          "scale_set_assign_time": "2020-01-01T00:00:00Z"
+        }
+      ],
+      "job_assigned": [
+        {
+          "request_id": 502,
+          "job_id": "job-expired-assigned",
+          "scale_set_assign_time": "2020-01-01T00:00:00Z"
+        }
+      ]
+    },
+    { "kind": "nil" }
+  ],
+  "after_end": "nil"
+}

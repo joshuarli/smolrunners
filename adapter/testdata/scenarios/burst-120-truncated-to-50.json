@@ -1,0 +1,1352 @@
+{
+  "name": "burst-120-truncated-to-50",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 120,
+      "total_available_jobs": 120
+    }
+  },
+  "max_messages_per_batch": 50,
+  "acquire_results": [
+    [
+      1001,
+      1002,
+      1003,
+      1004,
+      1005,
+      1006,
+      1007,
+      1008,
+      1009,
+      1010,
+      1011,
+      1012,
+      1013,
+      1014,
+      1015,
+      1016,
+      1017,
+      1018,
+      1019,
+      1020,
+      1021,
+      1022,
+      1023,
+      1024,
+      1025,
+      1026,
+      1027,
+      1028,
+      1029,
+      1030,
+      1031,
+      1032,
+      1033,
+      1034,
+      1035,
+      1036,
+      1037,
+      1038,
+      1039,
+      1040,
+      1041,
+      1042,
+      1043,
+      1044,
+      1045,
+      1046,
+      1047,
+      1048,
+      1049,
+      1050
+    ],
+    [
+      1051,
+      1052,
+      1053,
+      1054,
+      1055,
+      1056,
+      1057,
+      1058,
+      1059,
+      1060,
+      1061,
+      1062,
+      1063,
+      1064,
+      1065,
+      1066,
+      1067,
+      1068,
+      1069,
+      1070,
+      1071,
+      1072,
+      1073,
+      1074,
+      1075,
+      1076,
+      1077,
+      1078,
+      1079,
+      1080,
+      1081,
+      1082,
+      1083,
+      1084,
+      1085,
+      1086,
+      1087,
+      1088,
+      1089,
+      1090,
+      1091,
+      1092,
+      1093,
+      1094,
+      1095,
+      1096,
+      1097,
+      1098,
+      1099,
+      1100
+    ],
+    [
+      1101,
+      1102,
+      1103,
+      1104,
+      1105,
+      1106,
+      1107,
+      1108,
+      1109,
+      1110,
+      1111,
+      1112,
+      1113,
+      1114,
+      1115,
+      1116,
+      1117,
+      1118,
+      1119,
+      1120
+    ]
+  ],
+  "steps": [
+    {
+      "kind": "message",
+      "message_id": 600,
+      "job_available": [
+        {
+          "request_id": 1001,
+          "job_id": "job-burst-001",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77001,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1002,
+          "job_id": "job-burst-002",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77002,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1003,
+          "job_id": "job-burst-003",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77003,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1004,
+          "job_id": "job-burst-004",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77004,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1005,
+          "job_id": "job-burst-005",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77005,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1006,
+          "job_id": "job-burst-006",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77006,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1007,
+          "job_id": "job-burst-007",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77007,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1008,
+          "job_id": "job-burst-008",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77008,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1009,
+          "job_id": "job-burst-009",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77009,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1010,
+          "job_id": "job-burst-010",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77010,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1011,
+          "job_id": "job-burst-011",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77011,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1012,
+          "job_id": "job-burst-012",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77012,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1013,
+          "job_id": "job-burst-013",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77013,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1014,
+          "job_id": "job-burst-014",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77014,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1015,
+          "job_id": "job-burst-015",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77015,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1016,
+          "job_id": "job-burst-016",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77016,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1017,
+          "job_id": "job-burst-017",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77017,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1018,
+          "job_id": "job-burst-018",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77018,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1019,
+          "job_id": "job-burst-019",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77019,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1020,
+          "job_id": "job-burst-020",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77020,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1021,
+          "job_id": "job-burst-021",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77021,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1022,
+          "job_id": "job-burst-022",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77022,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1023,
+          "job_id": "job-burst-023",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77023,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1024,
+          "job_id": "job-burst-024",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77024,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1025,
+          "job_id": "job-burst-025",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77025,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1026,
+          "job_id": "job-burst-026",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77026,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1027,
+          "job_id": "job-burst-027",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77027,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1028,
+          "job_id": "job-burst-028",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77028,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1029,
+          "job_id": "job-burst-029",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77029,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1030,
+          "job_id": "job-burst-030",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77030,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1031,
+          "job_id": "job-burst-031",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77031,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1032,
+          "job_id": "job-burst-032",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77032,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1033,
+          "job_id": "job-burst-033",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77033,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1034,
+          "job_id": "job-burst-034",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77034,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1035,
+          "job_id": "job-burst-035",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77035,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1036,
+          "job_id": "job-burst-036",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77036,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1037,
+          "job_id": "job-burst-037",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77037,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1038,
+          "job_id": "job-burst-038",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77038,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1039,
+          "job_id": "job-burst-039",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77039,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1040,
+          "job_id": "job-burst-040",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77040,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1041,
+          "job_id": "job-burst-041",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77041,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1042,
+          "job_id": "job-burst-042",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77042,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1043,
+          "job_id": "job-burst-043",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77043,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1044,
+          "job_id": "job-burst-044",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77044,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1045,
+          "job_id": "job-burst-045",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77045,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1046,
+          "job_id": "job-burst-046",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77046,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1047,
+          "job_id": "job-burst-047",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77047,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1048,
+          "job_id": "job-burst-048",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77048,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1049,
+          "job_id": "job-burst-049",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77049,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1050,
+          "job_id": "job-burst-050",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77050,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1051,
+          "job_id": "job-burst-051",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77051,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1052,
+          "job_id": "job-burst-052",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77052,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1053,
+          "job_id": "job-burst-053",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77053,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1054,
+          "job_id": "job-burst-054",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77054,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1055,
+          "job_id": "job-burst-055",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77055,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1056,
+          "job_id": "job-burst-056",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77056,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1057,
+          "job_id": "job-burst-057",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77057,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1058,
+          "job_id": "job-burst-058",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77058,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1059,
+          "job_id": "job-burst-059",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77059,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1060,
+          "job_id": "job-burst-060",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77060,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1061,
+          "job_id": "job-burst-061",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77061,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1062,
+          "job_id": "job-burst-062",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77062,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1063,
+          "job_id": "job-burst-063",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77063,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1064,
+          "job_id": "job-burst-064",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77064,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1065,
+          "job_id": "job-burst-065",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77065,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1066,
+          "job_id": "job-burst-066",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77066,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1067,
+          "job_id": "job-burst-067",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77067,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1068,
+          "job_id": "job-burst-068",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77068,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1069,
+          "job_id": "job-burst-069",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77069,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1070,
+          "job_id": "job-burst-070",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77070,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1071,
+          "job_id": "job-burst-071",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77071,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1072,
+          "job_id": "job-burst-072",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77072,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1073,
+          "job_id": "job-burst-073",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77073,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1074,
+          "job_id": "job-burst-074",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77074,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1075,
+          "job_id": "job-burst-075",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77075,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1076,
+          "job_id": "job-burst-076",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77076,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1077,
+          "job_id": "job-burst-077",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77077,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1078,
+          "job_id": "job-burst-078",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77078,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1079,
+          "job_id": "job-burst-079",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77079,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1080,
+          "job_id": "job-burst-080",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77080,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1081,
+          "job_id": "job-burst-081",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77081,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1082,
+          "job_id": "job-burst-082",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77082,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1083,
+          "job_id": "job-burst-083",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77083,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1084,
+          "job_id": "job-burst-084",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77084,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1085,
+          "job_id": "job-burst-085",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77085,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1086,
+          "job_id": "job-burst-086",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77086,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1087,
+          "job_id": "job-burst-087",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77087,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1088,
+          "job_id": "job-burst-088",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77088,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1089,
+          "job_id": "job-burst-089",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77089,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1090,
+          "job_id": "job-burst-090",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77090,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1091,
+          "job_id": "job-burst-091",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77091,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1092,
+          "job_id": "job-burst-092",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77092,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1093,
+          "job_id": "job-burst-093",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77093,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1094,
+          "job_id": "job-burst-094",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77094,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1095,
+          "job_id": "job-burst-095",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77095,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1096,
+          "job_id": "job-burst-096",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77096,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1097,
+          "job_id": "job-burst-097",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77097,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1098,
+          "job_id": "job-burst-098",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77098,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1099,
+          "job_id": "job-burst-099",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77099,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1100,
+          "job_id": "job-burst-100",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77100,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1101,
+          "job_id": "job-burst-101",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77101,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1102,
+          "job_id": "job-burst-102",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77102,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1103,
+          "job_id": "job-burst-103",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77103,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1104,
+          "job_id": "job-burst-104",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77104,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1105,
+          "job_id": "job-burst-105",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77105,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1106,
+          "job_id": "job-burst-106",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77106,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1107,
+          "job_id": "job-burst-107",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77107,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1108,
+          "job_id": "job-burst-108",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77108,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1109,
+          "job_id": "job-burst-109",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77109,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1110,
+          "job_id": "job-burst-110",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77110,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1111,
+          "job_id": "job-burst-111",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77111,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1112,
+          "job_id": "job-burst-112",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77112,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1113,
+          "job_id": "job-burst-113",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77113,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1114,
+          "job_id": "job-burst-114",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77114,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1115,
+          "job_id": "job-burst-115",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77115,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1116,
+          "job_id": "job-burst-116",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77116,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1117,
+          "job_id": "job-burst-117",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77117,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1118,
+          "job_id": "job-burst-118",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77118,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1119,
+          "job_id": "job-burst-119",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77119,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        },
+        {
+          "request_id": 1120,
+          "job_id": "job-burst-120",
+          "labels": [
+            "smol-debian13-arm64-4c8g"
+          ],
+          "workflow_run_id": 77120,
+          "owner_name": "acme",
+          "repository_name": "repo"
+        }
+      ]
+    },
+    {
+      "kind": "nil"
+    }
+  ],
+  "after_end": "nil"
+}

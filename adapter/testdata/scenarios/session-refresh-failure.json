@@ -1,0 +1,17 @@
+{
+  "name": "session-refresh-failure",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 0
+    }
+  },
+  "steps": [
+    {
+      "kind": "error",
+      "error": "session refresh failed: installation revoked"
+    }
+  ],
+  "after_end": "error"
+}

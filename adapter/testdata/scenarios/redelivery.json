@@ -1,0 +1,37 @@
+{
+  "name": "redelivery",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 1
+    }
+  },
+  "acquire_results": [[301], [301]],
+  "steps": [
+    {
+      "kind": "message",
+      "message_id": 300,
+      "job_available": [
+        {
+          "request_id": 301,
+          "job_id": "job-redelivered",
+          "labels": ["smol-debian13-arm64-4c8g"]
+        }
+      ]
+    },
+    {
+      "kind": "message",
+      "message_id": 300,
+      "job_available": [
+        {
+          "request_id": 301,
+          "job_id": "job-redelivered",
+          "labels": ["smol-debian13-arm64-4c8g"]
+        }
+      ]
+    },
+    { "kind": "nil" }
+  ],
+  "after_end": "nil"
+}

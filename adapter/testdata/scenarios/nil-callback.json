@@ -1,0 +1,16 @@
+{
+  "name": "nil-callback",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 0,
+      "total_idle_runners": 1
+    }
+  },
+  "steps": [
+    { "kind": "nil" },
+    { "kind": "nil" }
+  ],
+  "after_end": "nil"
+}

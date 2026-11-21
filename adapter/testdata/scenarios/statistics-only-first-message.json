@@ -1,0 +1,17 @@
+{
+  "name": "statistics-only-first-message",
+  "session": {
+    "session_id": "11111111-2222-3333-4444-555555555555",
+    "owner_name": "acme",
+    "statistics": {
+      "total_assigned_jobs": 2,
+      "total_available_jobs": 2,
+      "total_idle_runners": 0
+    }
+  },
+  "steps": [
+    { "kind": "nil" },
+    { "kind": "nil" }
+  ],
+  "after_end": "nil"
+}
