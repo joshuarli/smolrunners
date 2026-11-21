@@ -36,7 +36,7 @@ test-faults:
 	@echo "test-faults: not implemented until F1" >&2; exit 2
 
 web-test:
-	@echo "web-test: not implemented until W1" >&2; exit 2
+	cd web && npm ci && npm test && npm run build
 
 bench:
 	@echo "bench: not implemented until X1-bench" >&2; exit 2
