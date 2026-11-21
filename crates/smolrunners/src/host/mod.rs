@@ -4,6 +4,7 @@ mod config;
 mod environment;
 mod marker;
 mod smolvm;
+mod storage;
 
 use config::Config;
 use std::path::PathBuf;
@@ -171,6 +172,7 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
             agent::prepare_state(config)?;
             agent::list(config)
         }
+        "storage" => storage::dispatch(config, args),
         "stop" => {
             let mut name: Option<String> = None;
             let mut index = 0usize;
