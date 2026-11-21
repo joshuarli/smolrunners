@@ -23,9 +23,13 @@ test-fast:
 
 test-vm:
 	@test -n "$(T)" || { echo "usage: make test-vm T=<name>" >&2; exit 2; }
+ifeq ($(T),connected_job)
+	TMPDIR=$(CURDIR)/.work/tmp sh tests/vm/connected_job.sh
+else
 	sh scripts/linux-host.sh up
 	sh scripts/linux-host.sh sync
 	sh scripts/linux-host.sh exec 'sh tests/vm/$(T).sh'
+endif
 
 PARKED := alpine_runner
 
