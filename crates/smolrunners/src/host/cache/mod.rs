@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod docker;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread;
