@@ -197,6 +197,50 @@
       "role": "sdk",
       "license": "MIT",
       "purpose": ".NET 10 SDK for cross-publishing linux-musl-x64 (NE2)"
+    },
+    {
+      "name": "alpine-libgcc-aarch64",
+      "version": "15.2.0-r5",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/libgcc-15.2.0-r5.apk",
+      "sha256": "369aaa6e9d099a737bad6dd3e6c2fe7bb1547ca26d22b94ee0411228f709b403",
+      "size": 66323,
+      "license": "LGPL-2.1-or-later",
+      "purpose": "musl C++ runtime dependency for the native Alpine runner (L2 retry)",
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime"
+    },
+    {
+      "name": "alpine-libstdcxx-aarch64",
+      "version": "15.2.0-r5",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/libstdc++-15.2.0-r5.apk",
+      "sha256": "2302e766d4e4926038ec166ecb85837ee884576115236ddb565e3a5fca4a11d7",
+      "size": 908984,
+      "license": "LGPL-2.1-or-later with GCC exception",
+      "purpose": "musl libstdc++ for the native Alpine runner (L2 retry)",
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime"
+    },
+    {
+      "name": "alpine-icu-libs-aarch64",
+      "version": "78.1-r0",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/icu-libs-78.1-r0.apk",
+      "sha256": "2393882dcf1e3f5be98696665c3468dd0d2a85cd568d50abd232729863df9738",
+      "size": 1957437,
+      "license": "ICU",
+      "purpose": "musl ICU libraries for globalization (L2 retry)",
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime"
+    },
+    {
+      "name": "alpine-icu-data-en-aarch64",
+      "version": "78.1-r0",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/icu-data-en-78.1-r0.apk",
+      "sha256": "3fa1dfb91a081f73c32a46f6ec054196caa37c9fd9569c433ddf6b29415dcf13",
+      "size": 1025819,
+      "license": "ICU",
+      "purpose": "musl ICU English data for globalization (L2 retry)",
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime"
     }
   ]
 }
