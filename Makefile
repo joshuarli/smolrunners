@@ -37,7 +37,7 @@ test-vm-all:
 	done
 
 test-faults:
-	@echo "test-faults: not implemented until F1" >&2; exit 2
+	sh tests/faults/run.sh
 
 web-test:
 	cd web && npm ci && npm test && npm run build
