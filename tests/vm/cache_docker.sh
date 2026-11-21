@@ -178,22 +178,13 @@ c docker-drain --job cold --repo acme/widgets --tier maintainer \
 note 'publish the Docker generation through the D1 generation store'
 staged=$(c docker-stage --name warm-artifacts --source /work/cache/stage \
   --repo acme/widgets --tier maintainer)
-generation=$(printf '%s' "$staged" | python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])')
+generation=$(printf '%s' "$staged" | sed -n 's/.*"generation":"\([^"]*\)".*/\1/p')
 [ -n "$generation" ] || fail "staging produced no generation: $staged"
-printf '%s\n' "$staged" | python3 -c '
-import json, sys
-doc = json.load(sys.stdin)
-assert doc["files"] >= 2 and doc["bytes"] > 0, doc
-'
+printf '%s\n' "$staged" | grep -Eq '"files":([2-9]|[1-9][0-9]+)' || fail "staging produced too few files: $staged"
+printf '%s\n' "$staged" | grep -Eq '"bytes":[1-9]' || fail "staging produced no bytes: $staged"
 c docker-publish --gen "$generation" --repo acme/widgets > /work/cache/publish.json
-c current --repo acme/widgets | python3 -c '
-import json, sys
-assert json.load(sys.stdin)["generation"] == "'"$generation"'"
-'
-c inspect --gen "$generation" | python3 -c '
-import json, sys
-assert json.load(sys.stdin)["state"] == "published"
-'
+c current --repo acme/widgets | grep -q "\"generation\":\"$generation\"" || fail 'current generation did not match'
+c inspect --gen "$generation" | grep -q '"state":"published"' || fail 'generation was not published'
 
 note 'remount a wiped data root and start a fresh daemon'
 mount "$docker_dev" /var/lib/docker || fail 'data root remount failed'
@@ -211,12 +202,10 @@ printf '%s\n' '{"containers":0,"services":0,"volumes":0,"credentials":0,"daemon_
 note 'warm reuse: transfer, unpack and build are measured separately'
 transfer=$(c docker-transfer --job warm --gen "$generation" --repo acme/widgets \
   --tier maintainer --target /work/reuse)
-printf '%s\n' "$transfer" | python3 -c '
-import json, sys
-doc = json.load(sys.stdin)
-assert doc["granted"] is True and doc["files"] >= 2 and doc["bytes"] > 0, doc
-assert doc["transfer_ms"] >= 0, doc
-'
+printf '%s\n' "$transfer" | grep -q '"granted":true' || fail 'transfer was not granted'
+printf '%s\n' "$transfer" | grep -Eq '"files":([2-9]|[1-9][0-9]+)' || fail 'transfer produced too few files'
+printf '%s\n' "$transfer" | grep -Eq '"bytes":[1-9]' || fail 'transfer produced no bytes'
+printf '%s\n' "$transfer" | grep -Eq '"transfer_ms":[0-9]+' || fail 'transfer timing missing'
 unpack_start=$(date +%s%3N)
 docker load -i /work/reuse/image.tar > /dev/null
 unpack_ms=$(( $(date +%s%3N) - unpack_start ))
