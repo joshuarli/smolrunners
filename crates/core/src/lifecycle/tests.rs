@@ -33,7 +33,7 @@ fn assigned(event: &str, request_id: i64, job_id: &str, reason: Option<String>) 
         id: event.to_owned(),
         request_id: request(request_id),
         job_id: job(job_id),
-        runner_id: RunnerId::new(7).expect("runner id"),
+        runner_id: Some(RunnerId::new(7).expect("runner id")),
         reason,
     }
 }

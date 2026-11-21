@@ -46,6 +46,9 @@ func (c *FramedCoordinator) Submit(ctx context.Context, frame proto.Frame) (prot
 		if ack.CorrelationID() != frame.ID {
 			return proto.Frame{}, fmt.Errorf("coordinator: ack for %q, want %q", ack.CorrelationID(), frame.ID)
 		}
+		if ack.Recorded == nil || !*ack.Recorded {
+			return proto.Frame{}, fmt.Errorf("coordinator: ack for %q was not recorded durably", frame.ID)
+		}
 		return *ack, nil
 	}
 }

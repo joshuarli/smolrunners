@@ -36,7 +36,8 @@ pub enum Frame {
         id: String,
         request_id: RunnerRequestId,
         job_id: ProtocolJobId,
-        runner_id: RunnerId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        runner_id: Option<RunnerId>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
@@ -57,7 +58,9 @@ pub enum Frame {
     AcquireOutcome {
         schema_version: u32,
         id: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         request_ids: Vec<RunnerRequestId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         acquired_ids: Vec<RunnerRequestId>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,

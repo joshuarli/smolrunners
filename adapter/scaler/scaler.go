@@ -116,8 +116,8 @@ func (s *Scaler) Scale(ctx context.Context, msg *scaleset.RunnerScaleSetMessage)
 			Kind:          proto.KindAcquireOutcome,
 			SchemaVersion: proto.SchemaVersion,
 			ID:            s.ids.forMessage(msg.MessageID, "acquire"),
-			RequestIDs:    append([]int64(nil), acceptedIDs...),
-			AcquiredIDs:   append([]int64(nil), acquired...),
+			RequestIDs:    append([]int64{}, acceptedIDs...),
+			AcquiredIDs:   append([]int64{}, acquired...),
 			JobID:         firstJobID(msg, acceptedIDs),
 		}
 		if _, err := s.coordinator.Submit(ctx, outcome); err != nil {
