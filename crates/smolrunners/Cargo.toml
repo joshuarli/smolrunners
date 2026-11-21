@@ -1,0 +1,25 @@
+[package]
+name = "smolrunners"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "smolrunners"
+path = "src/main.rs"
+
+[dependencies]
+smolrunners-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+sha2.workspace = true
+lexopt.workspace = true
+h12tiny-core.workspace = true
+h12tiny-server.workspace = true
+h12tiny-client.workspace = true
+laputa-smol.workspace = true
+laputa-async-executor.workspace = true
+laputa-async-io.workspace = true
+laputa-async-net.workspace = true

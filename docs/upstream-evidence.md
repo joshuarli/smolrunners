@@ -1,0 +1,26 @@
+# Upstream evidence
+
+Every HTTPS archive in `sources.lock.json` was resolved on 2026-11-21 by anonymous reads. Each row
+records where the pin came from and when it must be rechecked. OCI images are pinned by digest in
+`images/*/image.toml` because a digest reference verifies itself.
+
+| Input | Pin (SHA-256 / digest) | Date | Source path | Finding | Evidence class | Decision | Revalidation trigger |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| smolvm-darwin-arm64 | 46b953581d9f08b9e3f6629075a053aba7aa902fb76940c1ef0ef7f58166aae4 | 2026-11-21 | `github.com/smol-machines/smolvm` release v1.36.0 `checksums.sha256` | 45555824 B; macOS runtime boots nested guests here | release checksum file | pin v1.36.0 | a release that fails `test-vm` smoke |
+| smolvm-linux-arm64 | 6af238f7c91149d4661f64f01f160431595b691f07465e650b09fa0d7b9bff1e | 2026-11-21 | same release checksum file | 52348267 B; inner arm64 guest runtime | release checksum file | pin v1.36.0 | nested guest fails a functional gate |
+| smolvm-linux-x86_64 | ecc9ca4c71e9e8c5a8e7d24484692460c3cb54fd757fb7e80d71e79f56e00e5a | 2026-11-21 | same release checksum file | 54950302 B; reserved for NE2 | release checksum file | pin v1.36.0 | NE2 qualification fails |
+| runner-linux-arm64 | 670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de945 | 2026-11-21 | `gh api repos/actions/runner/releases/tags/v2.338.2`, asset digest | 140231317 B; targets .NET 8 | release asset digest | pin v2.338.2 | a compatibility gap I1 cannot remedy |
+| runner-linux-x64 | baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40 | 2026-11-21 | same release asset digests | 228071396 B; reserved for NE2 | release asset digest | pin v2.338.2 | NE2 qualification fails |
+| go-linux-arm64 | a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49 | 2026-11-21 | `go.dev/dl/?mode=json&include=all` | 67076044 B; matches scale-set `go.mod` | upstream JSON with SHA-256 | pin 1.27.3 | scale-set raises its `go` directive |
+| go-linux-amd64 | 65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 | 2026-11-21 | same upstream JSON | 70588678 B; reserved for NE2 | upstream JSON with SHA-256 | pin 1.27.3 | NE2 qualification fails |
+| docker-static-aarch64 | 1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2 | 2026-11-21 | `download.docker.com/linux/static/stable/aarch64/docker-29.9.3.tgz` | 77933624 B; contains dockerd, containerd, runc; vendor publishes no checksum file | locally computed SHA-256 over the downloaded asset | pin 29.9.3 | a Docker corpus item fails in-image |
+| docker-static-x86_64 | 3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973 | 2026-11-21 | `download.docker.com/linux/static/stable/x86_64/docker-29.9.3.tgz` | 86360685 B; reserved for NE2 | locally computed SHA-256 | pin 29.9.3 | NE2 qualification fails |
+| buildx-linux-arm64 | 05c88e0f9152825e609a1cdb391faf14d5f94d23d071eaecb87bae69d98da8b8 | 2026-11-21 | `gh api repos/docker/buildx/releases/tags/v0.39.1`, asset digest | 63570080 B | release asset digest | pin 0.39.1 | a build corpus item fails |
+| buildx-linux-amd64 | 903090816da68f8bc1a2ff5346dd163a5adacfce4548d003c75df42cd47a9bf4 | 2026-11-21 | same release asset digests | 68296864 B; reserved for NE2 | release asset digest | pin 0.39.1 | NE2 qualification fails |
+| scaleset-sdk | f44ee813f849486824931679bd5d5db31544336da63debfc3b7f92e9026d2bf3 | 2026-11-21 | `codeload.github.com/actions/scaleset/tar.gz/716908e...` | 165495 B; `go.mod` requires Go 1.27.3; commit message `Validate required JSON, token, and session responses (#145)` dated 2026-11-07 | locally computed SHA-256 over an immutable commit archive | pin the commit | SDK listener contract test fails at this pin |
+| node-linux-arm64 | 2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09 | 2026-11-21 | `nodejs.org/dist/v22.23.5/SHASUMS256.txt` | 30222232 B | upstream checksum file | pin 22.23.5 | the web build needs a newer Node |
+| node-linux-x64 | cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8 | 2026-11-21 | same checksum file | 31062912 B; reserved for NE2 | upstream checksum file | pin 22.23.5 | NE2 qualification fails |
+| dotnet-sdk-linux-arm64 | dcc820a4277ab6bb3f648c609d86f2a7912ba9a3d166545e7b95dff419c12f0f | 2026-11-21 | `builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/...` | 235410674 B; vendor publishes SHA-512 only | locally computed SHA-256 over the downloaded asset | pin 10.0.404 | L2 exceeds its bound (D13 reversal) |
+| dotnet-sdk-linux-x64 | c0610757a818fde4b960d27a0ac421f273068a05dc5ec7abafc01dbf84e9cb4d | 2026-11-21 | same build path | 243138887 B; reserved for NE2 | locally computed SHA-256 | pin 10.0.404 | NE2 qualification fails |
+| alpine:3.24 | sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf | 2026-11-21 | Docker Hub `library/alpine` manifest for tag `3.24` | multi-arch index including linux/arm64 | registry content digest | pin by digest | a digest changes at the tag |
+| debian:13 | sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6 | 2026-11-21 | Docker Hub `library/debian` manifest for tag `13` | multi-arch index including linux/arm64 and linux/amd64 | registry content digest | pin by digest | a digest changes at the tag |

@@ -1,0 +1,13 @@
+[package]
+name = "smolrunners-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "smolrunners-launcher"
+path = "src/main.rs"
+
+[dependencies]
+rustix.workspace = true

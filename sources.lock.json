@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "inputs": [
+    {
+      "name": "smolvm-darwin-arm64",
+      "version": "1.36.0",
+      "url": "https://github.com/smol-machines/smolvm/releases/download/v1.36.0/smolvm-1.36.0-darwin-arm64.tar.gz",
+      "sha256": "46b953581d9f08b9e3f6629075a053aba7aa902fb76940c1ef0ef7f58166aae4",
+      "size": 45555824,
+      "target": "aarch64-apple-darwin",
+      "role": "runtime",
+      "license": "Apache-2.0",
+      "purpose": "macOS microVM runtime and nested Linux host"
+    },
+    {
+      "name": "smolvm-linux-arm64",
+      "version": "1.36.0",
+      "url": "https://github.com/smol-machines/smolvm/releases/download/v1.36.0/smolvm-1.36.0-linux-arm64.tar.gz",
+      "sha256": "6af238f7c91149d4661f64f01f160431595b691f07465e650b09fa0d7b9bff1e",
+      "size": 52348267,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "Apache-2.0",
+      "purpose": "inner Linux guest runtime for arm64 CI jobs"
+    },
+    {
+      "name": "smolvm-linux-x86_64",
+      "version": "1.36.0",
+      "url": "https://github.com/smol-machines/smolvm/releases/download/v1.36.0/smolvm-1.36.0-linux-x86_64.tar.gz",
+      "sha256": "ecc9ca4c71e9e8c5a8e7d24484692460c3cb54fd757fb7e80d71e79f56e00e5a",
+      "size": 54950302,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "Apache-2.0",
+      "purpose": "inner Linux guest runtime for x64 CI jobs (NE2)"
+    },
+    {
+      "name": "runner-linux-arm64",
+      "version": "2.338.2",
+      "url": "https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-arm64-2.338.2.tar.gz",
+      "sha256": "670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de945",
+      "size": 140231317,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "executor",
+      "license": "MIT",
+      "purpose": "official guest executor for arm64 product images"
+    },
+    {
+      "name": "runner-linux-x64",
+      "version": "2.338.2",
+      "url": "https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz",
+      "sha256": "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40",
+      "size": 228071396,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "executor",
+      "license": "MIT",
+      "purpose": "official guest executor for x64 product images (NE2)"
+    },
+    {
+      "name": "go-linux-arm64",
+      "version": "1.27.3",
+      "url": "https://go.dev/dl/go1.27.3.linux-arm64.tar.gz",
+      "sha256": "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49",
+      "size": 67076044,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "toolchain",
+      "license": "BSD-3-Clause",
+      "purpose": "Go toolchain required by actions/scaleset"
+    },
+    {
+      "name": "go-linux-amd64",
+      "version": "1.27.3",
+      "url": "https://go.dev/dl/go1.27.3.linux-amd64.tar.gz",
+      "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+      "size": 70588678,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "toolchain",
+      "license": "BSD-3-Clause",
+      "purpose": "Go toolchain required by actions/scaleset (NE2)"
+    },
+    {
+      "name": "docker-static-aarch64",
+      "version": "29.9.3",
+      "url": "https://download.docker.com/linux/static/stable/aarch64/docker-29.9.3.tgz",
+      "sha256": "1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2",
+      "size": 77933624,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "Apache-2.0",
+      "purpose": "Docker Engine, containerd and runc static bundle for arm64 images"
+    },
+    {
+      "name": "docker-static-x86_64",
+      "version": "29.9.3",
+      "url": "https://download.docker.com/linux/static/stable/x86_64/docker-29.9.3.tgz",
+      "sha256": "3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973",
+      "size": 86360685,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "Apache-2.0",
+      "purpose": "Docker Engine, containerd and runc static bundle for x64 images"
+    },
+    {
+      "name": "buildx-linux-arm64",
+      "version": "0.39.1",
+      "url": "https://github.com/docker/buildx/releases/download/v0.39.1/buildx-v0.39.1.linux-arm64",
+      "sha256": "05c88e0f9152825e609a1cdb391faf14d5f94d23d071eaecb87bae69d98da8b8",
+      "size": 63570080,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "build-tool",
+      "license": "Apache-2.0",
+      "purpose": "Buildx plugin for arm64 guest Docker"
+    },
+    {
+      "name": "buildx-linux-amd64",
+      "version": "0.39.1",
+      "url": "https://github.com/docker/buildx/releases/download/v0.39.1/buildx-v0.39.1.linux-amd64",
+      "sha256": "903090816da68f8bc1a2ff5346dd163a5adacfce4548d003c75df42cd47a9bf4",
+      "size": 68296864,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "build-tool",
+      "license": "Apache-2.0",
+      "purpose": "Buildx plugin for x64 guest Docker (NE2)"
+    },
+    {
+      "name": "scaleset-sdk",
+      "version": "716908e507993947ada4273aecf2361c02e5836c",
+      "url": "https://codeload.github.com/actions/scaleset/tar.gz/716908e507993947ada4273aecf2361c02e5836c",
+      "sha256": "f44ee813f849486824931679bd5d5db31544336da63debfc3b7f92e9026d2bf3",
+      "size": 165495,
+      "role": "sdk",
+      "license": "MIT",
+      "purpose": "Go scale-set listener SDK consumed by the adapter"
+    },
+    {
+      "name": "node-linux-arm64",
+      "version": "22.23.5",
+      "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-arm64.tar.xz",
+      "sha256": "2babb9eb5264860d540849f4b064a6fbdebcdc323657d9d382ce23d313fd5e09",
+      "size": 30222232,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "MIT",
+      "purpose": "Node for the web UI build and runner host steps"
+    },
+    {
+      "name": "node-linux-x64",
+      "version": "22.23.5",
+      "url": "https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz",
+      "sha256": "cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8",
+      "size": 31062912,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "runtime",
+      "license": "MIT",
+      "purpose": "Node for the web UI build and runner host steps (NE2)"
+    },
+    {
+      "name": "dotnet-sdk-linux-arm64",
+      "version": "10.0.404",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-arm64.tar.gz",
+      "sha256": "dcc820a4277ab6bb3f648c609d86f2a7912ba9a3d166545e7b95dff419c12f0f",
+      "size": 235410674,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "sdk",
+      "license": "MIT",
+      "purpose": ".NET 10 SDK for the linux-musl-arm64 runner spike (L2)"
+    },
+    {
+      "name": "dotnet-sdk-linux-x64",
+      "version": "10.0.404",
+      "url": "https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.404/dotnet-sdk-10.0.404-linux-x64.tar.gz",
+      "sha256": "c0610757a818fde4b960d27a0ac421f273068a05dc5ec7abafc01dbf84e9cb4d",
+      "size": 243138887,
+      "target": "x86_64-unknown-linux-musl",
+      "role": "sdk",
+      "license": "MIT",
+      "purpose": ".NET 10 SDK for cross-publishing linux-musl-x64 (NE2)"
+    }
+  ]
+}

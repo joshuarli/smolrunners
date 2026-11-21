@@ -1,0 +1,13 @@
+[package]
+name = "smolrunners-collector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "smolrunners-collector"
+path = "src/main.rs"
+
+[dependencies]
+rustix.workspace = true

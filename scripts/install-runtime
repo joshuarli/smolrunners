@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+repo="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"
+mkdir -p "$repo/.work/tmp"
+exec sh "$repo/bootstrap/buildlib-run" -- "$repo/scripts/install-runtime.py" "$@"
