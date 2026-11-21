@@ -24,12 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bytes"
-version = "1.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "776dfebd015e2d8732c684a2c71003674ccb49457b539b9e82151ba38e96dd7c"
-
-[[package]]
 name = "cc"
 version = "1.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -121,15 +115,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "futures-channel"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
-dependencies = [
- "futures-core",
-]
-
-[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -142,24 +127,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
 
 [[package]]
-name = "futures-task"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
-
-[[package]]
-name = "futures-util"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
-dependencies = [
- "futures-core",
- "futures-task",
- "pin-project-lite",
- "slab",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -167,60 +134,6 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
-]
-
-[[package]]
-name = "h12tiny-client"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d5b6adb9c8238e3acd1bf3a0b758acb52246ee4ed67edc4ecdfe6fb6d07a8a1"
-dependencies = [
- "futures-channel",
- "futures-io",
- "futures-util",
- "h12tiny-client-normalize",
- "h12tiny-core",
- "http",
- "http-body",
- "laputa-hyper-futures-lite",
-]
-
-[[package]]
-name = "h12tiny-client-normalize"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4742323990543454dba088ced5a5c58bf7c6e060667162714f84fce2433df93"
-dependencies = [
- "http",
-]
-
-[[package]]
-name = "h12tiny-core"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6508a2c4e8bece3649e951b87082f949871c4bc1335b6eececb131a80aa525f4"
-dependencies = [
- "futures-io",
- "laputa-async-io 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "laputa-hyper-futures-lite",
-]
-
-[[package]]
-name = "h12tiny-server"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4833134d7ad0f215475ce16ff8d3ac118a53a5c9625144d644fae9e5419fd6c"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-io",
- "futures-util",
- "h12tiny-core",
- "http",
- "http-body",
- "laputa-async-net 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "laputa-hyper-futures-lite",
- "pin-project-lite",
 ]
 
 [[package]]
@@ -246,26 +159,6 @@ name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
-
-[[package]]
-name = "http"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0"
-dependencies = [
- "bytes",
- "itoa",
-]
-
-[[package]]
-name = "http-body"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca2a8f2913ee65f60facd6a5905613afaa448497a0230cc41ce022d93290bc2c"
-dependencies = [
- "bytes",
- "http",
-]
 
 [[package]]
 name = "indexmap"
@@ -502,20 +395,6 @@ dependencies = [
  "laputa-fastrand",
  "laputa-parking",
  "pin-project-lite",
-]
-
-[[package]]
-name = "laputa-hyper-futures-lite"
-version = "1.12.0-beta.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90f0c32d9d90f65367d225d7dc3ec5d2ccbdd33c00043402a5aa7718af771fb5"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-io",
- "http",
- "http-body",
- "laputa-futures-lite",
 ]
 
 [[package]]
@@ -772,9 +651,6 @@ checksum = "3244542535d5de959d90ec55d1b5ff0fd2bb7b1310223907d5f11932847f7b59"
 name = "smolrunners"
 version = "0.1.0"
 dependencies = [
- "h12tiny-client",
- "h12tiny-core",
- "h12tiny-server",
  "laputa-async-executor 0.3.0 (sparse+https://crates.17166969.xyz/current/registry/)",
  "laputa-async-io 0.3.0 (sparse+https://crates.17166969.xyz/current/registry/)",
  "laputa-async-net 0.3.0 (sparse+https://crates.17166969.xyz/current/registry/)",
