@@ -7,6 +7,11 @@ node=/opt/node/bin/node
 start_daemon wipe
 assert_data_root
 
+for image in registry:2 alpine:3.24 docker:29.9.3-cli testcontainers/ryuk:0.11.0; do
+  docker pull -q "$image" >/dev/null 2>&1 &
+done
+wait
+
 note 'item 1: shell docker run with local registry push and pull'
 docker pull -q registry:2 >/dev/null
 docker pull -q alpine:3.24 >/dev/null
@@ -112,7 +117,7 @@ FROM alpine:3.24
 COPY dockerd docker containerd ctr runc docker-init /usr/local/bin/
 RUN mkdir -p /var/lib/docker /run/containerd
 ENTRYPOINT ["dockerd"]
-CMD ["--iptables=false","--ip6tables=false","--bridge=none","--storage-driver=vfs"]
+CMD ["--iptables=false","--ip6tables=false","--userland-proxy=false","--bridge=none","--storage-driver=vfs"]
 EOF
 DOCKER_BUILDKIT=1 docker buildx build --builder default -q -t sr-corpus/dind "$dind_build" \
   > /work/dind-build.log 2>&1 || \
