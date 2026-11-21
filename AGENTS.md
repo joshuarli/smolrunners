@@ -27,6 +27,7 @@ OCI images are pinned by digest in `images/*/image.toml`. Download only through
 | `fetch_input` of the darwin bundle, verified | 1.8 s | runs from cache when verified |
 | `make check` (fetch tests + builds) | 0.41 s | 10 min |
 | `make test-vm T=smoke` (two inner guests) | 20.8 s | 10 min |
+| `make test-vm T=image_docker` (local Docker corpus) | 735 s | 10 min; exceeded in the nested host after all eight local items passed — nested-host timings are functional evidence, not gates |
 | `make test-fast` | measured at P1 | 120 s |
 | `cargo build` after a one-line change | measured at P1 | 60 s |
 | inner guest `machine run … true` | 3.7–4.1 s | 15 s |
