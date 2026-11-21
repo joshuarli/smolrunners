@@ -73,3 +73,10 @@ Retry condition: the parent adds SHA-256/size pins to `sources.lock.json` for a 
 binary and for the musl C++ runtime and ICU libraries (or upstream produces a runner build
 with no such host dependencies), then L2 rebuilds and qualifies both `linux-musl-arm64` and
 the cross-published `linux-musl-x64` output.
+
+Progress (2026-11-21): the C++/ICU part is pinned — `alpine-libgcc-aarch64`,
+`alpine-libstdcxx-aarch64`, `alpine-icu-libs-aarch64` and `alpine-icu-data-en-aarch64` are
+verified through `fetch-inputs.py` and justified in `docs/upstream-evidence.md`. The remaining
+blocker is a musl Node: nodejs.org publishes no `linux-arm64-musl` build for the pinned Node
+22.23.5, so the retry needs the Alpine `nodejs` apk and its transitive shared-library closure
+pinned and installed into the rootfs. Until then L2 stays parked.
