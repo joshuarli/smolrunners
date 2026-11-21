@@ -17,7 +17,7 @@ fn usage() -> Output {
          init, doctor\n\
          github connect\n\
          host invite, host join\n\
-         hosts list, inspect, drain, resume\n\
+         hosts list, inspect, drain, resume, revoke, kill, heartbeat\n\
          profiles list, apply, inspect, recommend\n\
          images build, qualify, promote\n\
          caches list, inspect, prune\n\
@@ -80,8 +80,8 @@ fn profile_body(parsed: &args::Parsed) -> Result<Value, String> {
     } else {
         Ok(json!({
             "name": parsed.option("name"),
-            "vcpu": parsed.option("vcpu"),
-            "memory_gib": parsed.option("memory-gib").or_else(|| parsed.option("memory_gib")),
+            "vcpu": parsed.option("vcpu").and_then(|value| value.parse::<u64>().ok()),
+            "memory_gib": parsed.option("memory-gib").or_else(|| parsed.option("memory_gib")).and_then(|value| value.parse::<u64>().ok()),
             "distro": parsed.option("distro"),
             "release": parsed.option("release"),
             "arch": parsed.option("arch"),
@@ -173,7 +173,10 @@ pub fn execute(args: &[String], transport: &dyn Transport) -> Result<Output, Str
             transport,
             "POST",
             "/api/v1/host/invite",
-            Some(json!({ "host_key": parsed.option("host-key").unwrap_or("sr-host-a") })),
+            Some(json!({
+                "host_key": parsed.option("host-key").unwrap_or("sr-host-a"),
+                "cert_fingerprint": parsed.option("cert-fingerprint"),
+            })),
             "host invite",
             json,
             format,
@@ -186,8 +189,10 @@ pub fn execute(args: &[String], transport: &dyn Transport) -> Result<Output, Str
                 "token": parsed.option("token"),
                 "hostname": parsed.option("hostname").unwrap_or("sr-host-a"),
                 "arch": parsed.option("arch").unwrap_or("arm64"),
-                "vcpu": parsed.option("vcpu").unwrap_or("4"),
-                "memory_gib": parsed.option("memory-gib").unwrap_or("8"),
+                "vcpu": parsed.option("vcpu").and_then(|value| value.parse::<u64>().ok()),
+                "memory_gib": parsed.option("memory-gib").and_then(|value| value.parse::<u64>().ok()),
+                "host_key": parsed.option("host-key").unwrap_or("sr-host-a"),
+                "cert_fingerprint": parsed.option("cert-fingerprint").unwrap_or("fixture-client-cert"),
             })),
             "host join",
             json,
@@ -234,6 +239,42 @@ pub fn execute(args: &[String], transport: &dyn Transport) -> Result<Output, Str
                 &format!("/api/v1/hosts/{id}/resume"),
                 Some(json!({})),
                 "hosts resume",
+                json,
+                format,
+            )
+        }
+        ["hosts", "revoke"] => {
+            let id = id_arg(&parsed, 2, "id")?;
+            send(
+                transport,
+                "POST",
+                &format!("/api/v1/hosts/{id}/revoke"),
+                Some(json!({})),
+                "hosts revoke",
+                json,
+                format,
+            )
+        }
+        ["hosts", "kill"] => {
+            let id = id_arg(&parsed, 2, "id")?;
+            send(
+                transport,
+                "POST",
+                &format!("/api/v1/hosts/{id}/kill"),
+                Some(json!({})),
+                "hosts kill",
+                json,
+                format,
+            )
+        }
+        ["hosts", "heartbeat"] => {
+            let id = id_arg(&parsed, 2, "id")?;
+            send(
+                transport,
+                "POST",
+                &format!("/api/v1/hosts/{id}/heartbeat"),
+                Some(json!({ "incarnation": parsed.option("incarnation") })),
+                "hosts heartbeat",
                 json,
                 format,
             )

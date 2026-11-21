@@ -61,6 +61,9 @@ fn command_name(method: &str, path: &str) -> String {
         ("host", Some("join"), _) => "host join".to_owned(),
         ("hosts", Some("drain"), _) => "hosts drain".to_owned(),
         ("hosts", Some("resume"), _) => "hosts resume".to_owned(),
+        ("hosts", Some("revoke"), _) => "hosts revoke".to_owned(),
+        ("hosts", Some("kill"), _) => "hosts kill".to_owned(),
+        ("hosts", Some("heartbeat"), _) => "hosts heartbeat".to_owned(),
         ("hosts", Some(_), _) => "hosts inspect".to_owned(),
         ("hosts", None, _) => "hosts list".to_owned(),
         ("profiles", Some("apply"), _) => "profiles apply".to_owned(),
@@ -167,9 +170,10 @@ fn dispatch(
         ("POST", "host") => match parts.get(2).copied() {
             Some("invite") => {
                 let host_key = body["host_key"].as_str().unwrap_or("sr-host-a").to_owned();
+                let cert_fingerprint = body["cert_fingerprint"].as_str().map(str::to_owned);
                 let mut state = state.lock().map_err(|_| (500, "lock", "state lock poisoned".to_owned()))?;
                 let invitation = state
-                    .create_invitation(&host_key, now_ms())
+                    .create_invitation(&host_key, cert_fingerprint, now_ms())
                     .map_err(|error| (500, "invite_failed", error))?;
                 Ok(ApiReply::new(200, command, serde_json::to_value(&invitation).unwrap())
                     .with_scope(json!({ "kind": "invitation", "id": invitation.id, "single_use": true })))
@@ -180,10 +184,18 @@ fn dispatch(
                 let arch = body["arch"].as_str().unwrap_or("arm64").to_owned();
                 let vcpu = body["vcpu"].as_u64().unwrap_or(4) as u16;
                 let memory = body["memory_gib"].as_u64().unwrap_or(8) as u32;
+                let host_key = body["host_key"].as_str().unwrap_or("sr-host-a").to_owned();
+                let cert_fingerprint = body["cert_fingerprint"].as_str().unwrap_or("").to_owned();
                 let mut state = state.lock().map_err(|_| (500, "lock", "state lock poisoned".to_owned()))?;
                 let host = state
-                    .join_host(token, &hostname, &arch, vcpu, memory, now_ms())
-                    .map_err(|error| (409, "join_failed", error))?;
+                    .join_host(token, &hostname, &arch, vcpu, memory, &host_key, &cert_fingerprint, now_ms())
+                    .map_err(|error| {
+                        let status = match error.as_str() {
+                            "fingerprint_mismatch" | "certificate_mismatch" | "missing_certificate" => 401,
+                            _ => 409,
+                        };
+                        (status, "join_failed", error)
+                    })?;
                 Ok(ApiReply::new(200, command, serde_json::to_value(&host).unwrap())
                     .with_scope(json!({ "kind": "host", "id": host.id, "incarnation": host.incarnation })))
             }
@@ -206,16 +218,35 @@ fn dispatch(
             let action = parts.get(3).copied();
             let state_value = match action {
                 Some("drain") => {
-                    let (previous, next) = state
-                        .set_host_state(id, "drained")
+                    let (previous, next, revision) = state
+                        .drain_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
-                    json!({ "previous": previous, "next": next })
+                    json!({ "previous": previous, "next": next, "drain_revision": revision })
                 }
                 Some("resume") => {
-                    let (previous, next) = state
-                        .set_host_state(id, "eligible")
+                    let (previous, next, revision) = state
+                        .resume_host(id)
                         .map_err(|error| (404, "host_not_found", error))?;
-                    json!({ "previous": previous, "next": next })
+                    json!({ "previous": previous, "next": next, "drain_revision": revision })
+                }
+                Some("revoke") => {
+                    let (previous, next, revision) = state
+                        .revoke_host(id)
+                        .map_err(|error| (404, "host_not_found", error))?;
+                    json!({ "previous": previous, "next": next, "drain_revision": revision, "revoked": true })
+                }
+                Some("kill") => {
+                    let (previous, next, revision) = state
+                        .kill_host(id)
+                        .map_err(|error| (404, "host_not_found", error))?;
+                    json!({ "previous": previous, "next": next, "drain_revision": revision })
+                }
+                Some("heartbeat") => {
+                    let incarnation = body["incarnation"].as_u64();
+                    let host = state
+                        .heartbeat_host(id, incarnation, now_ms())
+                        .map_err(|error| (409, "heartbeat_failed", error))?;
+                    json!({ "id": host.id, "incarnation": host.incarnation, "last_contact_ms": host.last_contact_ms })
                 }
                 None => {
                     let host = state.host(id).ok_or_else(|| (404, "host_not_found", "unknown host".to_owned()))?;
@@ -467,11 +498,13 @@ fn dispatch(
                     let action = parts.get(3).copied();
                     match action {
                         Some("start") => {
-                            let host_id = body["host_id"].as_i64().ok_or_else(|| (400, "missing_host", "missing host_id".to_owned()))?;
-                            let job = state.start_job(id, host_id, now_ms()).map_err(|error| (404, "job_not_found", error))?;
-                            state.persist().map_err(|error| (500, "persist_failed", error))?;
+                            let host_id = body["host_id"].as_i64();
+                            let incarnation = body["incarnation"].as_u64();
+                            let job = state
+                                .admit_job(id, host_id, incarnation, now_ms())
+                                .map_err(|error| (409, "admission_denied", error))?;
                             Ok(ApiReply::new(200, command, serde_json::to_value(&job).unwrap())
-                                .with_scope(json!({ "kind": "job", "id": id, "vm_scoped": true })))
+                                .with_scope(json!({ "kind": "job", "id": id, "host_id": job.host_id, "vm_scoped": true })))
                         }
                         Some("complete") => {
                             let result = body["result"].as_str().unwrap_or("success").to_owned();

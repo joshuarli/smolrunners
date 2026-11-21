@@ -4,7 +4,15 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use smolrunners_core::telemetry::{History, IngestContext, Sample, SCHEMA_VERSION};
+
+fn fingerprint(value: &str) -> String {
+    Sha256::digest(value.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Installation {
@@ -22,6 +30,8 @@ pub struct Invitation {
     pub id: i64,
     pub token: String,
     pub host_key: String,
+    pub key_fingerprint: String,
+    pub cert_fingerprint: Option<String>,
     pub single_use: bool,
     pub consumed: bool,
     pub created_at_ms: i64,
@@ -35,9 +45,16 @@ pub struct HostRecord {
     pub arch: String,
     pub total_vcpu: u16,
     pub total_memory_gib: u32,
+    pub used_vcpu: u16,
+    pub used_memory_gib: u32,
     pub admission_state: String,
     pub incarnation: u64,
     pub capabilities: Vec<String>,
+    pub key_fingerprint: String,
+    pub cert_fingerprint: String,
+    pub mtls: bool,
+    pub drain_revision: u64,
+    pub revoked: bool,
     pub last_contact_ms: Option<i64>,
 }
 
@@ -190,6 +207,7 @@ impl State {
     pub fn create_invitation(
         &mut self,
         host_key: &str,
+        cert_fingerprint: Option<String>,
         now_ms: i64,
     ) -> Result<Invitation, String> {
         let id = self.next_id();
@@ -197,6 +215,8 @@ impl State {
             id,
             token: format!("sr-invite-{id}-{}", now_ms),
             host_key: host_key.to_owned(),
+            key_fingerprint: fingerprint(host_key),
+            cert_fingerprint,
             single_use: true,
             consumed: false,
             created_at_ms: now_ms,
@@ -213,27 +233,85 @@ impl State {
         arch: &str,
         total_vcpu: u16,
         total_memory_gib: u32,
+        host_key: &str,
+        cert_fingerprint: &str,
         now_ms: i64,
     ) -> Result<HostRecord, String> {
         let invitation = self
             .data
             .invitations
-            .iter_mut()
+            .iter()
             .find(|invitation| invitation.token == token && !invitation.consumed)
             .ok_or_else(|| "invite_not_found_or_used".to_owned())?;
-        invitation.consumed = true;
-        let host_key = invitation.host_key.clone();
+        if fingerprint(host_key) != invitation.key_fingerprint {
+            return Err("fingerprint_mismatch".to_owned());
+        }
+        if cert_fingerprint.is_empty() {
+            return Err("missing_certificate".to_owned());
+        }
+        if let Some(expected) = invitation.cert_fingerprint.as_deref() {
+            if cert_fingerprint != expected {
+                return Err("certificate_mismatch".to_owned());
+            }
+        }
+        let key_fingerprint = invitation.key_fingerprint.clone();
+        let bound_host_key = invitation.host_key.clone();
+        let invitation_id = invitation.id;
+        let capabilities = vec![
+            format!("arch={arch}"),
+            format!("vcpu={total_vcpu}"),
+            format!("memory_gib={total_memory_gib}"),
+            "mtls=true".to_owned(),
+        ];
+        if let Some(invitation) = self
+            .data
+            .invitations
+            .iter_mut()
+            .find(|invitation| invitation.id == invitation_id)
+        {
+            invitation.consumed = true;
+        }
+        if let Some(host) = self
+            .data
+            .hosts
+            .iter_mut()
+            .find(|host| host.host_key == bound_host_key)
+        {
+            host.hostname = hostname.to_owned();
+            host.arch = arch.to_owned();
+            host.total_vcpu = total_vcpu;
+            host.total_memory_gib = total_memory_gib;
+            host.used_vcpu = 0;
+            host.used_memory_gib = 0;
+            host.admission_state = "eligible".to_owned();
+            host.incarnation += 1;
+            host.capabilities = capabilities;
+            host.key_fingerprint = key_fingerprint;
+            host.cert_fingerprint = cert_fingerprint.to_owned();
+            host.mtls = true;
+            host.revoked = false;
+            host.last_contact_ms = Some(now_ms);
+            host.drain_revision += 1;
+            return Ok(host.clone());
+        }
         let id = self.next_id();
         let host = HostRecord {
             id,
-            host_key,
+            host_key: bound_host_key,
             hostname: hostname.to_owned(),
             arch: arch.to_owned(),
             total_vcpu,
             total_memory_gib,
+            used_vcpu: 0,
+            used_memory_gib: 0,
             admission_state: "eligible".to_owned(),
             incarnation: 1,
-            capabilities: Vec::new(),
+            capabilities,
+            key_fingerprint,
+            cert_fingerprint: cert_fingerprint.to_owned(),
+            mtls: true,
+            drain_revision: 0,
+            revoked: false,
             last_contact_ms: Some(now_ms),
         };
         self.data.hosts.push(host.clone());
@@ -241,7 +319,13 @@ impl State {
         Ok(host)
     }
 
-    pub fn set_host_state(&mut self, id: i64, state: &str) -> Result<(String, String), String> {
+    fn transition_host(
+        &mut self,
+        id: i64,
+        state: &str,
+        revoke: bool,
+        clear_contact: bool,
+    ) -> Result<(String, String, u64), String> {
         let host = self
             .data
             .hosts
@@ -250,8 +334,152 @@ impl State {
             .ok_or_else(|| "host_not_found".to_owned())?;
         let previous = host.admission_state.clone();
         host.admission_state = state.to_owned();
+        host.drain_revision += 1;
+        if revoke {
+            host.revoked = true;
+        }
+        if clear_contact {
+            host.last_contact_ms = None;
+        }
+        let revision = host.drain_revision;
         self.persist()?;
-        Ok((previous, state.to_owned()))
+        Ok((previous, state.to_owned(), revision))
+    }
+
+    pub fn drain_host(&mut self, id: i64) -> Result<(String, String, u64), String> {
+        self.transition_host(id, "drained", false, false)
+    }
+
+    pub fn resume_host(&mut self, id: i64) -> Result<(String, String, u64), String> {
+        self.transition_host(id, "eligible", false, false)
+    }
+
+    pub fn revoke_host(&mut self, id: i64) -> Result<(String, String, u64), String> {
+        self.transition_host(id, "revoked", true, false)
+    }
+
+    pub fn kill_host(&mut self, id: i64) -> Result<(String, String, u64), String> {
+        self.transition_host(id, "lost", false, true)
+    }
+
+    pub fn heartbeat_host(&mut self, id: i64, incarnation: Option<u64>, now_ms: i64) -> Result<HostRecord, String> {
+        let host = self
+            .data
+            .hosts
+            .iter_mut()
+            .find(|host| host.id == id)
+            .ok_or_else(|| "host_not_found".to_owned())?;
+        if let Some(observed) = incarnation {
+            if observed != host.incarnation {
+                return Err("incarnation_mismatch".to_owned());
+            }
+        }
+        host.last_contact_ms = Some(now_ms);
+        let result = host.clone();
+        self.persist()?;
+        Ok(result)
+    }
+
+    fn profile_shape(&self, profile: &str) -> (u16, u32, String) {
+        if let Some(record) = self.data.profiles.iter().find(|record| record.name == profile) {
+            return (record.vcpu, record.memory_gib, record.arch.clone());
+        }
+        let stem = profile.rsplit('-').next().unwrap_or(profile);
+        let vcpu = stem.split('c').next().and_then(|value| value.parse().ok()).unwrap_or(1);
+        let memory_gib = stem.split('c').nth(1).and_then(|value| value.trim_end_matches('g').parse().ok()).unwrap_or(2);
+        (vcpu, memory_gib, "arm64".to_owned())
+    }
+
+    pub fn admit_job(
+        &mut self,
+        id: i64,
+        explicit_host_id: Option<i64>,
+        incarnation: Option<u64>,
+        now_ms: i64,
+    ) -> Result<JobRecord, String> {
+        let (profile_name, required_vcpu, required_memory, required_arch) = {
+            let job = self.job(id).ok_or_else(|| "job_not_found".to_owned())?;
+            let (vcpu, memory, mut arch) = self.profile_shape(&job.profile);
+            for label in &job.labels {
+                if label.contains("-x64-") {
+                    arch = "x64".to_owned();
+                } else if label.contains("-arm64-") {
+                    arch = "arm64".to_owned();
+                }
+            }
+            (job.profile.clone(), vcpu, memory, arch)
+        };
+        let candidates: Vec<HostRecord> = self
+            .data
+            .hosts
+            .iter()
+            .filter(|host| match explicit_host_id {
+                Some(host_id) => host.id == host_id,
+                None => true,
+            })
+            .cloned()
+            .collect();
+        if candidates.is_empty() {
+            return Err("no such host".to_owned());
+        }
+        let mut eligible: Vec<HostRecord> = candidates
+            .iter()
+            .filter(|host| {
+                host.admission_state == "eligible"
+                    && host.revoked == false
+                    && host.last_contact_ms.is_some()
+                    && host.arch == required_arch
+                    && host.total_vcpu >= required_vcpu
+                    && host.total_memory_gib >= required_memory
+                    && host.total_vcpu.saturating_sub(host.used_vcpu) >= required_vcpu
+                    && host.total_memory_gib.saturating_sub(host.used_memory_gib) >= required_memory
+            })
+            .cloned()
+            .collect();
+        if eligible.is_empty() {
+            let reason = match explicit_host_id {
+                Some(host_id) => match candidates.first() {
+                    Some(host) if host.revoked => format!("host {} revoked", host.host_key),
+                    Some(host) if host.admission_state == "drained" => format!("host {} drained", host.host_key),
+                    Some(host) if host.admission_state == "lost" => format!("host {} lost; capacity fenced", host.host_key),
+                    Some(host) if host.last_contact_ms.is_none() => format!("host {} unreachable; capacity fenced", host_id),
+                    Some(host) => format!(
+                        "host {} capabilities {} arch={} vcpu>={} memory_gib>={} do not match profile {}",
+                        host.host_key, host.capabilities.join(","), required_arch, required_vcpu, required_memory, profile_name
+                    ),
+                    None => format!("host {host_id} not found"),
+                },
+                None => format!(
+                    "no eligible host matching arch={} vcpu>={} memory_gib>={}",
+                    required_arch, required_vcpu, required_memory
+                ),
+            };
+            return Err(reason);
+        }
+        eligible.sort_by(|left, right| {
+            (left.total_vcpu, left.total_memory_gib, left.id).cmp(&(right.total_vcpu, right.total_memory_gib, right.id))
+        });
+        let chosen = eligible.remove(0);
+        if let Some(observed) = incarnation {
+            if observed != chosen.incarnation {
+                return Err(format!("incarnation_mismatch: host {} at {}", chosen.host_key, chosen.incarnation));
+            }
+        }
+        let host_key = chosen.host_key.clone();
+        let host_id = chosen.id;
+        if let Some(host) = self.data.hosts.iter_mut().find(|host| host.id == host_id) {
+            host.used_vcpu += required_vcpu;
+            host.used_memory_gib += required_memory;
+            host.last_contact_ms = Some(now_ms);
+        }
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        job.state = "busy".to_owned();
+        job.host_id = Some(host_id);
+        job.start_at_ms = Some(now_ms);
+        job.admission_reason = format!("admitted to matching host {host_key}");
+        let result = job.clone();
+        self.persist()?;
+        Ok(result)
     }
 
     pub fn apply_profile(&mut self, record: ProfileRecord) -> Result<(), String> {
@@ -392,25 +620,31 @@ impl State {
         Ok(job)
     }
 
-    pub fn start_job(
-        &mut self,
-        id: i64,
-        host_id: i64,
-        now_ms: i64,
-    ) -> Result<JobRecord, String> {
-        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
-        job.state = "busy".to_owned();
-        job.host_id = Some(host_id);
-        job.start_at_ms = Some(now_ms);
-        Ok(job.clone())
-    }
-
     pub fn finish_job(&mut self, id: i64, result: &str, now_ms: i64) -> Result<JobRecord, String> {
+        let (host_id, profile_name) = {
+            let job = self.job(id).ok_or_else(|| "job_not_found".to_owned())?;
+            (job.host_id, job.profile.clone())
+        };
+        let (required_vcpu, required_memory, _) = self.profile_shape(&profile_name);
+        let fence = host_id
+            .and_then(|id| self.data.hosts.iter().find(|host| host.id == id))
+            .map(|host| host.admission_state == "lost")
+            .unwrap_or(false);
+        if let Some(host_id) = host_id {
+            if !fence {
+                if let Some(host) = self.data.hosts.iter_mut().find(|host| host.id == host_id) {
+                    host.used_vcpu = host.used_vcpu.saturating_sub(required_vcpu);
+                    host.used_memory_gib = host.used_memory_gib.saturating_sub(required_memory);
+                }
+            }
+        }
         let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
         job.state = "done".to_owned();
         job.result = Some(result.to_owned());
         job.finish_at_ms = Some(now_ms);
-        Ok(job.clone())
+        let finished = job.clone();
+        self.persist()?;
+        Ok(finished)
     }
 
     pub fn attach_github(&mut self, id: i64, url: &str) -> Result<(), String> {

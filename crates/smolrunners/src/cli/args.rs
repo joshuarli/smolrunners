@@ -24,6 +24,7 @@ const VALUE_OPTIONS: &[&str] = &[
     "format", "file", "name", "vcpu", "memory-gib", "memory_gib", "distro", "release",
     "arch", "digest", "token", "hostname", "host-key", "id", "app-id", "app_id",
     "installation-id", "installation_id", "account", "a", "b", "left", "right", "url",
+    "cert-fingerprint", "incarnation",
 ];
 
 pub fn parse(args: &[String]) -> Result<Parsed, String> {
