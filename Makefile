@@ -35,11 +35,13 @@ else
 endif
 
 PARKED := alpine_runner
+HELPERS := telemetry_spool
 
 test-vm-all:
 	@for f in tests/vm/*.sh; do \
 	  name=$$(basename $$f .sh); \
 	  case " $(PARKED) " in *" $$name "*) echo "skipping parked $$name"; continue ;; esac; \
+	  case " $(HELPERS) " in *" $$name "*) echo "skipping helper $$name"; continue ;; esac; \
 	  $(MAKE) test-vm T=$$name || exit 1; \
 	done
 
