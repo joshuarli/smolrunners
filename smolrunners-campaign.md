@@ -3,9 +3,9 @@
 ## Status
 
 - **Goal:** build smolrunners, a self-hosted fleet manager that runs each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical CPU, RAM, storage and lifecycle telemetry. The goal for this campaign is every local deliverable below, accepted on the nested Linux host. Live GitHub proof and native-hardware proof are listed under **Needs environment**.
-- **Last accepted revision:** `aa4c484` (L2 reversal and parked acceptance).
-- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1, R1, W1, E1, I2, L1. **Red:** none. **Parked:** `L2` — the D13 spike reversed after its bound: the published musl runner needs unpinned musl C++ runtime, ICU and musl Node inputs; retry after `sources.lock.json` pins them. Evidence and retry condition are in `docs/compatibility.md`.
-- **Next slice:** `D2` is in flight; P2 begins when it clears. The parked L2 does not block local gates because native-Alpine labels stay unadvertised.
+- **Last accepted revision:** `246735e` (protocol producer/consumer interoperability).
+- **Accepted:** P0-ENV, C1, A1, H1, C2, I1, C3, C4, T1, H2, T2, H3, T3, U1, D1, R1, W1, E1, I2, L1, F1. **Red:** none. **Parked:** `L2` (D13 reversal: needs pinned musl C++ runtime, ICU and musl Node inputs); `D2` (Docker-state reuse reverted from integration because symlink private views do not isolate ordinary writes — work kept on `park/d2`).
+- **Next slice:** `INT1` connected execution (owner steering). Treat earlier slice acceptances as "component implemented and checked"; only INT1 and later connected-path tests establish integrated production behavior.
 - **Resume prompt:** `Execute ~/repos/smolrunners/smolrunners-campaign.md from Status`. First command: run the parent steering checkpoint, integrate any finished lane, then launch the next ready P1 lanes.
 
 ## Charter
@@ -215,6 +215,16 @@ The oracles: the official runner and the SDK listener contract for runtime seman
 | `W1` web | η | U1 | Hosts and capacity, profiles, jobs with queue reasons, and a job detail page: live CPU and RAM against limits, I/O and network, host pressure, lifecycle and step overlays, and a GitHub link. Shares observation logic with the CLI through the API. | `make web-test`, then `agent-browser` against `make test-vm T=cli_e2e`'s live coordinator: the job page shows the same peak and limit values as `jobs inspect --json` |
 | `L1` alpine image | λ | I2, T1 | `images/alpine324`, booting with the collector, guest Docker, and the I2 Docker capabilities. | `make test-vm T=image_alpine` |
 | `L2` musl runner | λ | L1 | The D13 spike: the official Listener and Worker for `linux-musl-arm64` on .NET 10, with musl Node where host steps select it. Cross-publish `linux-musl-x64`. **Bound:** 3 attempts and 1 working session of build effort. Then record the blocker (D13 reversal). | `make test-vm T=alpine_runner`: `Runner.Listener --version` runs natively on Alpine; host-step Node runs a JS action entrypoint; `ldd` shows no glibc |
+
+### P1i — connected execution (owner steering 2026-11-21)
+
+This milestone is inserted before further cache expansion or optimization. Component tests are not
+enough: the next acceptance must run one local fixture job through the production coordinator and
+host, with trustworthy live telemetry and recovery after a coordinator restart.
+
+| ID | Prereq | Work | Acceptance |
+| --- | --- | --- | --- |
+| `INT1` | P1 local slices | Make the core store, ledger and lifecycle the coordinator's authoritative state; supervise the adapter and host effects from `serve`; connect live telemetry ingestion; recover an interrupted execution; repair the demonstrated protocol, observation, sizing, provenance and acceptance-binary defects that block a trustworthy connected path. | `make test-vm T=connected_job`: from a fresh source build the coordinator and host run one fixture job end to end; telemetry changes during execution; a coordinator kill/restart lets the same execution finish, tear down and release capacity; a second job runs clean. The test driver supplies only the fixture, demand and failures. |
 
 ### P2 — hardening
 
