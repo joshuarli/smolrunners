@@ -75,11 +75,16 @@ fn check(name: &str, verdict: Verdict, evidence: Value, reason: Option<String>) 
     }
 }
 
+const OPTIONAL_CHECKS: [&str; 2] = ["reflink", "id_mapping"];
+
 fn finish(kind: &str, checks: Vec<Check>) -> Report {
     Report {
         schema_version: SCHEMA_VERSION,
         kind: kind.to_string(),
-        eligible: !checks.iter().any(|item| item.verdict == Verdict::Fail),
+        eligible: !checks.iter().any(|item| {
+            !OPTIONAL_CHECKS.contains(&item.name.as_str())
+                && matches!(item.verdict, Verdict::Fail | Verdict::Missing)
+        }),
         checks,
     }
 }
@@ -652,4 +657,39 @@ pub fn doctor(config: &Config) -> Report {
     };
     checks.extend(extras(config));
     finish("doctor", checks)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn a_missing_check_makes_a_host_ineligible() {
+        let report = finish("doctor", vec![
+            Check { name: "kvm".to_owned(), verdict: Verdict::Pass, evidence: json!(true), reason: None },
+            Check {
+                name: "seccomp".to_owned(),
+                verdict: Verdict::Missing,
+                evidence: json!(null),
+                reason: Some("not probed".to_owned()),
+            },
+        ]);
+        assert!(!report.eligible, "a missing check cannot coexist with eligibility");
+    }
+
+    #[test]
+    fn optional_storage_capability_probes_do_not_block_eligibility() {
+        let report = finish("doctor", vec![
+            Check { name: "seccomp".to_owned(), verdict: Verdict::Pass, evidence: json!(true), reason: None },
+            Check {
+                name: "reflink".to_owned(),
+                verdict: Verdict::Missing,
+                evidence: json!(null),
+                reason: Some("ext4 has no reflink".to_owned()),
+            },
+        ]);
+        assert!(report.eligible, "sparse allocation is an accepted fallback");
+    }
 }
