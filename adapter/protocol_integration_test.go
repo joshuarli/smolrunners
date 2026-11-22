@@ -73,6 +73,12 @@ func TestFakeCommandDuringEvent(t *testing.T) {
 			t.Fatalf("invalid %s", key)
 		}
 	}
+	rsaParams, _ := base64.StdEncoding.DecodeString(config[".credentials_rsaparams"])
+	for _, member := range []string{`"d"`, `"dp"`, `"dq"`, `"exponent"`, `"inverseQ"`, `"modulus"`, `"p"`, `"q"`} {
+		if !strings.Contains(string(rsaParams), member) {
+			t.Fatalf("fake rsa params lack %s: %s", member, rsaParams)
+		}
+	}
 	runner, _ := base64.StdEncoding.DecodeString(config[".runner"])
 	if !strings.Contains(string(runner), "http://127.0.0.1:9") || !strings.Contains(string(runner), `"agentName":"runner-1"`) {
 		t.Fatalf("wrong runner settings: %s", runner)

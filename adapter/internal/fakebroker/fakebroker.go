@@ -44,6 +44,7 @@ type Session struct {
 
 type Job struct {
 	RunnerName         string   `json:"runner_name"`
+	Result             string   `json:"result"`
 	RequestID          int64    `json:"request_id"`
 	JobID              string   `json:"job_id"`
 	Labels             []string `json:"labels"`
@@ -212,7 +213,7 @@ func buildMessageWithLimit(step Step, batch, limit int) *scaleset.RunnerScaleSet
 		message.JobStartedMessages = append(message.JobStartedMessages, &scaleset.JobStarted{JobMessageBase: job.base(), RunnerName: job.RunnerName})
 	}
 	for _, job := range slice(step.Completed) {
-		message.JobCompletedMessages = append(message.JobCompletedMessages, &scaleset.JobCompleted{JobMessageBase: job.base(), RunnerName: job.RunnerName})
+		message.JobCompletedMessages = append(message.JobCompletedMessages, &scaleset.JobCompleted{JobMessageBase: job.base(), RunnerName: job.RunnerName, Result: job.Result})
 	}
 	return message
 }

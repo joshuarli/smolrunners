@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"math/big"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -41,8 +44,27 @@ func fakeJIT(name string, id int64) string {
 	return encode(map[string]string{
 		".runner":                encode(runner),
 		".credentials":           encode(credentials),
-		".credentials_rsaparams": encode(map[string]string{}),
+		".credentials_rsaparams": encode(fakeRSAParams()),
 	})
+}
+
+func fakeRSAParams() map[string]string {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return map[string]string{}
+	}
+	key.Precompute()
+	b64 := func(n *big.Int) string { return base64.StdEncoding.EncodeToString(n.Bytes()) }
+	return map[string]string{
+		"d":        b64(key.D),
+		"dp":       b64(key.Precomputed.Dp),
+		"dq":       b64(key.Precomputed.Dq),
+		"exponent": b64(big.NewInt(int64(key.E))),
+		"inverseQ": b64(key.Precomputed.Qinv),
+		"modulus":  b64(key.N),
+		"p":        b64(key.Primes[0]),
+		"q":        b64(key.Primes[1]),
+	}
 }
 func commandHandler(broker *fakebroker.Client, client *scaleset.Client, setID int) scaler.CommandHandler {
 	return func(ctx context.Context, command proto.Frame) proto.Frame {

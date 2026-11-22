@@ -39,7 +39,7 @@ def main():
     env = dict(os.environ)
     env["SMOLRUNNERS_SCENARIOS_DIR"] = scenarios_dir
     process = subprocess.Popen(
-        [adapter],
+        [adapter, "--fake"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
