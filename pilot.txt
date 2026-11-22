@@ -1,0 +1,11 @@
+ot proven locally:
+- Real GitHub calls. The GitHub-mode test uses a local fake HTTP server.
+- An x86_64 guest boot. The bundle is cross-built, but every guest boot here was arm64.
+- Docker networking in the guest. dockerd runs without iptables, so containers probably have no outbound network; a docker build with RUN apt-get may fail. The runbook's example workflow avoids that.
+- The VMM memory allowance (512 MiB) under a guest that fills its memory.
+- The API's samples count is metric rows, not collector samples. It's pre-existing and I left it.
+
+What you need to do for the pilot:
+- Create a GitHub App with Administration: read and write and Metadata: read, installed on a disposable private repo.
+- Copy the bundle to your x86_64 host and follow docs/pilot.md from step 2.
+- When you're ready, force-push the rewritten history; then push these commits.
