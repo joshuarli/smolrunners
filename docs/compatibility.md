@@ -74,9 +74,12 @@ binary and for the musl C++ runtime and ICU libraries (or upstream produces a ru
 with no such host dependencies), then L2 rebuilds and qualifies both `linux-musl-arm64` and
 the cross-published `linux-musl-x64` output.
 
-Progress (2026-11-21): the C++/ICU part is pinned — `alpine-libgcc-aarch64`,
-`alpine-libstdcxx-aarch64`, `alpine-icu-libs-aarch64` and `alpine-icu-data-en-aarch64` are
-verified through `fetch-inputs.py` and justified in `docs/upstream-evidence.md`. The remaining
-blocker is a musl Node: nodejs.org publishes no `linux-arm64-musl` build for the pinned Node
-22.23.5, so the retry needs the Alpine `nodejs` apk and its transitive shared-library closure
-pinned and installed into the rootfs. Until then L2 stays parked.
+Progress (2026-11-22): all inputs for the retry are pinned and verified through
+`fetch-inputs.py` — the C++/ICU closure (`alpine-libgcc-aarch64`,
+`alpine-libstdcxx-aarch64`, `alpine-icu-libs-aarch64`, `alpine-icu-data-en-aarch64`) and the
+Alpine `nodejs` apk closure (`alpine-nodejs-aarch64` plus its 13 shared-library and
+certificate dependencies), justified in `docs/upstream-evidence.md`. nodejs.org publishes no
+`linux-arm64-musl` build for pinned Node 22.23.5, so the musl Node comes from Alpine's `nodejs`
+24.22.3 package. The remaining work is a reproducible rootfs recipe that extracts these apks
+before the offline inner guest starts, then the L2 build and qualification. L2 stays parked
+until that recipe and its smoke check exist.
