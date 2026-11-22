@@ -32,12 +32,13 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$wrapper" \
   cargo build --workspace --target "$target"
 
 out="$repo/target/$target/debug"
-for name in smolrunners smolrunners-collector smolrunners-launcher; do
+for name in smolrunners smolrunners-collector smolrunners-launcher smolrunners-cache; do
   [ -x "$out/$name" ] || { printf 'build-vm-binaries: missing %s\n' "$name" >&2; exit 2; }
   cp "$out/$name" "$repo/tests/vm/bin/$name"
 done
 cp "$out/smolrunners" "$repo/tests/vm/bin/smolrunners-doctor"
 cp "$out/smolrunners" "$repo/tests/vm/bin/smolrunners-storage"
+cp "$out/smolrunners-cache" "$repo/crates/smolrunners/src/host/cache/smolrunners-cache"
 cp "$out/smolrunners" "$repo/tests/cli/bin/smolrunners"
 
 printf 'build-vm-binaries: building the static Go adapter\n'

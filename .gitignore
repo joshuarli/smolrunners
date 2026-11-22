@@ -1,5 +1,8 @@
 /target/
 /work/
+/tests/vm/bin/
+/tests/cli/bin/
+/crates/smolrunners/src/host/cache/smolrunners-cache
 adapter/adapter
 node_modules/
 *.pyc

@@ -9,6 +9,10 @@ publish.workspace = true
 name = "smolrunners"
 path = "src/main.rs"
 
+[[bin]]
+name = "smolrunners-cache"
+path = "src/host/cache/fixture.rs"
+
 [dependencies]
 smolrunners-core = { path = "../core" }
 serde.workspace = true
