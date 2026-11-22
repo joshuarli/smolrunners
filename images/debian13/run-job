@@ -4,20 +4,25 @@ set -eu
 jit=$(cat -- "$1")
 rm -- "$1"
 if [ -x /usr/local/bin/dockerd ]; then
-  /usr/local/bin/dockerd --data-root /var/lib/docker &
+  /usr/local/bin/dockerd --data-root /var/lib/docker \
+    --exec-opt native.cgroupdriver=cgroupfs --storage-driver=vfs \
+    --iptables=false --ip6tables=false >/var/log/dockerd.log 2>&1 &
   daemon=$!
   seconds=0
   while [ ! -S /var/run/docker.sock ]; do
-    if ! kill -0 "$daemon" 2>/dev/null || [ "$seconds" -ge 30 ]; then
-      printf 'run-job: dockerd did not create /var/run/docker.sock within 30 seconds\n' >&2
+    if ! kill -0 "$daemon" 2>/dev/null || [ "$seconds" -ge 60 ]; then
+      printf 'run-job: dockerd did not create /var/run/docker.sock within 60 seconds\n' >&2
+      tail -20 /var/log/dockerd.log >&2
       exit 1
     fi
     sleep 1
     seconds=$((seconds + 1))
   done
+  printf 'run-job: dockerd ready after %s s\n' "$seconds" >&2
 fi
 cd /opt/runner
 export RUNNER_ALLOW_RUNASROOT=1
 ACTIONS_RUNNER_INPUT_JITCONFIG=$jit
 export ACTIONS_RUNNER_INPUT_JITCONFIG
+printf 'run-job: starting the official runner\n' >&2
 exec ./run.sh
