@@ -9,8 +9,21 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-fn owner_alive(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
+fn process_start(pid: u32) -> Option<u64> {
+    let text = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let tail = text.rsplit_once(')')?.1.split_whitespace().collect::<Vec<_>>();
+    tail.get(19)?.parse::<u64>().ok()
+}
+
+fn owner_matches(recorded: u64, observed: Option<u64>) -> bool {
+    match observed {
+        None => false,
+        Some(start) => recorded == 0 || recorded == start,
+    }
+}
+
+fn owner_alive(marker: &Marker) -> bool {
+    owner_matches(marker.owner_start, process_start(marker.owner_pid))
 }
 
 fn incarnation() -> String {
@@ -96,7 +109,7 @@ fn teardown(config: &Config, marker: &Marker) -> Result<(), String> {
 pub fn reap(config: &Config) -> Result<Vec<String>, String> {
     let mut reaped = Vec::new();
     for (path, marker) in marker::scan(&config.state)? {
-        if owner_alive(marker.owner_pid) {
+        if owner_alive(&marker) {
             continue;
         }
         teardown(config, &marker)?;
@@ -207,6 +220,7 @@ pub fn provision(
     let mut marker = Marker {
         machine,
         owner_pid: std::process::id(),
+        owner_start: process_start(std::process::id()).unwrap_or(0),
         incarnation: id,
         phase: Phase::Creating,
         image: image.to_string(),
@@ -307,7 +321,7 @@ pub fn list(config: &Config) -> Result<(), String> {
             marker.machine,
             marker.phase,
             marker.owner_pid,
-            owner_alive(marker.owner_pid)
+            owner_alive(&marker)
         );
         let _ = path;
     }
@@ -351,6 +365,7 @@ mod tests {
         Marker {
             machine: machine.to_owned(),
             owner_pid: std::process::id(),
+            owner_start: process_start(std::process::id()).unwrap_or(0),
             incarnation: "i".to_owned(),
             phase: Phase::Creating,
             image: "image".to_owned(),
@@ -373,5 +388,14 @@ mod tests {
         let third = allocate_uid(&dir.0).expect("third uid");
         assert_ne!(third, first);
         assert_ne!(third, second);
+    }
+
+    #[test]
+    fn a_reused_pid_is_not_the_recorded_owner() {
+        let mut owned = marker("machine-a", 61_000);
+        assert!(owner_matches(42, Some(42)));
+        assert!(owner_matches(0, Some(42)), "legacy markers without a start time still match");
+        assert!(!owner_matches(41, Some(42)));
+        assert!(!owner_matches(42, None));
     }
 }

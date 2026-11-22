@@ -16,6 +16,8 @@ pub enum Phase {
 pub struct Marker {
     pub machine: String,
     pub owner_pid: u32,
+    #[serde(default)]
+    pub owner_start: u64,
     pub incarnation: String,
     pub phase: Phase,
     pub image: String,
