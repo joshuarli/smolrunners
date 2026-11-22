@@ -34,7 +34,7 @@ else
 	sh scripts/linux-host.sh exec 'sh tests/vm/$(T).sh'
 endif
 
-PARKED := alpine_runner
+PARKED :=
 HELPERS := telemetry_spool
 
 test-vm-all:
