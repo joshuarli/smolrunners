@@ -7,6 +7,8 @@ import {
   chartData,
   formatBytes,
   formatNumber,
+  hostAllowance,
+  isActive,
   lifecycleEvents,
   limitsFromProfile,
   reportRow,
@@ -38,8 +40,6 @@ async function loadJob(id) {
   };
 }
 
-const ACTIVE_STATES = new Set(['queued', 'reserved', 'busy']);
-
 function timeLabel(ms) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '<missing>';
 }
@@ -54,7 +54,7 @@ export default function JobDetail(props) {
     }
   };
   createEffect(() => {
-    if (ACTIVE_STATES.has(bundle()?.job?.state)) {
+    if (isActive(bundle()?.job?.state)) {
       if (pollTimer === undefined) {
         pollTimer = setInterval(() => refetch(), 1000);
       }
@@ -80,9 +80,20 @@ export default function JobDetail(props) {
               <h1>{bundle().job.name} <span class="muted">#{bundle().job.id}</span></h1>
               <p>
                 <span class="badge">{bundle().job.state}</span>
-                <span class="muted">profile {bundle().job.profile}{bundle().job.profile_revision_id ? ` rev ${bundle().job.profile_revision_id}` : ''}</span>
-                <span class="muted">host {bundle().job.host_id ?? '<missing>'}</span>
+                {' '}<span class="muted">profile {bundle().job.profile}{bundle().job.profile_revision_id ? ` rev ${bundle().job.profile_revision_id}` : ''}</span>
+                {' · '}<span class="muted">host {bundle().job.host_id ?? '<missing>'}</span>
+                {' · '}<span class="muted" data-testid="execution-id">execution {bundle().job.execution_attempt_id}</span>
+                <Show when={bundle().job.runner_name}>{' · '}<span class="muted mono">{bundle().job.runner_name}</span></Show>
               </p>
+              <Show when={hostAllowance(bundle().job)}>
+                <p class="muted" data-testid="host-allowance">
+                  host cgroup cpu.max <span class="mono">{hostAllowance(bundle().job).cpuMax}</span>,
+                  memory.max {formatBytes(hostAllowance(bundle().job).memoryMaxBytes)},
+                  pids.max {hostAllowance(bundle().job).pidsMax},
+                  storage {hostAllowance(bundle().job).storageGib} GiB
+                </p>
+              </Show>
+              <Show when={bundle().job.result}><p class="reason">Result: {bundle().job.result}</p></Show>
               <p class="reason">Queue reason: {bundle().job.admission_reason}</p>
             </div>
             <Show when={bundle().job.github_url} fallback={<span class="muted">GitHub run: not attached</span>}>

@@ -9,7 +9,9 @@ import {
   chartPoints,
   formatBytes,
   groupSeries,
+  hostAllowance,
   hostCapacity,
+  isActive,
   lifecycleEvents,
   limitsFromProfile,
   peakOf,
@@ -108,4 +110,19 @@ test('queue reasons and capacity reflect admission state', () => {
     { admission_state: 'eligible', total_vcpu: 8, total_memory_gib: 16 },
   ]);
   assert.deepEqual(total, { hosts: 2, vcpu: 12, memoryGib: 24 });
+});
+
+test('every non-terminal coordinator state keeps the job page polling', () => {
+  for (const state of ['provisioning', 'idle', 'busy', 'reserved', 'queued']) {
+    assert.equal(isActive(state), true, state);
+  }
+  for (const state of ['done', 'failed', 'cancelled', 'error', undefined, '']) {
+    assert.equal(isActive(state), false, String(state));
+  }
+});
+
+test('host allowance comes from the limits frozen on the execution', () => {
+  const job = { limits: { guest_vcpu: 2, guest_memory_gib: 2, storage_gib: 8, host_cpu_max: '225000 100000', host_memory_max_bytes: 2684354560, host_pids_max: 512 } };
+  assert.deepEqual(hostAllowance(job), { cpuMax: '225000 100000', memoryMaxBytes: 2684354560, pidsMax: 512, storageGib: 8 });
+  assert.equal(hostAllowance({}), null);
 });

@@ -35,6 +35,23 @@ export function reportRow(rows, id) {
   return (rows ?? []).find((row) => String(row.id) === String(id)) ?? null;
 }
 
+const TERMINAL_STATES = new Set(['done', 'failed', 'cancelled', 'error']);
+
+export function isActive(state) {
+  return typeof state === 'string' && state.length > 0 && !TERMINAL_STATES.has(state);
+}
+
+export function hostAllowance(job) {
+  const limits = job?.limits;
+  if (!limits) return null;
+  return {
+    cpuMax: limits.host_cpu_max,
+    memoryMaxBytes: limits.host_memory_max_bytes,
+    pidsMax: limits.host_pids_max,
+    storageGib: limits.storage_gib,
+  };
+}
+
 export function limitsFromProfile(profile) {
   if (!profile) return null;
   return {
