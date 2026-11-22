@@ -681,6 +681,7 @@ mod faults {
             request_id: request(110),
             job_id: job("job-running"),
             result: "cancelled".to_owned(),
+            runner_name: None,
         };
         lifecycle.submit(&completed, "t2", &mut sink).expect("running cancel");
         assert!(sink.reservation().is_none());

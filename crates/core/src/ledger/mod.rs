@@ -14,7 +14,7 @@ use crate::store::{StoreError, open_connection};
 pub use engine::{Cycle, LedgerState, ReservationOutcome};
 pub use error::{LedgerError, PendingReason, PendingStatus, UnschedulableReason};
 pub use types::{
-    CacheZone, CapacityOffer, DEFAULT_MAX_WAIT, DemandCost, HostAdmission, HostCapacity,
+    CacheZone, CapacityOffer, DEFAULT_MAX_WAIT, DemandCost, HostAdmission, HostAllowance, HostCapacity,
     HostIncarnation, HostKey, LedgerConfig, Reservation, ReservationId, ReservationRequest,
     ReservationState, ScaleSetOffer, Tick, Usage, VmmOverhead,
 };

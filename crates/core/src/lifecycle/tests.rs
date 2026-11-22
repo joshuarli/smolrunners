@@ -206,6 +206,7 @@ fn lifecycle_consumes_every_frame_kind() {
             request_id: request(22),
             job_id: job("job-kinds"),
             result: "success".to_owned(),
+            runner_name: None,
         },
         acquire("evt-acquired", 21),
         Frame::Session {

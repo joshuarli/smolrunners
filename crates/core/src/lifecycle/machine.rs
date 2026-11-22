@@ -496,7 +496,13 @@ impl Lifecycle {
                 Frame::JobStarted { .. } => {
                     state = Some(ExecutionState::Busy);
                 }
-                Frame::Run { .. } | Frame::Capacity { .. } | Frame::Session { .. } | Frame::Ack { .. } => {}
+                Frame::Run { .. }
+                | Frame::Capacity { .. }
+                | Frame::Session { .. }
+                | Frame::Ack { .. }
+                | Frame::JitRequest { .. }
+                | Frame::RemoveRunner { .. }
+                | Frame::CommandResult { .. } => {}
             }
         } else {
             state = Some(ExecutionState::Failed);

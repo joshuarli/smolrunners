@@ -14,6 +14,7 @@ pub enum Frame {
     Run {
         schema_version: u32,
         id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         scenario: String,
     },
     Capacity {
@@ -56,6 +57,8 @@ pub enum Frame {
         job_id: ProtocolJobId,
         #[serde(default)]
         result: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runner_name: Option<RunnerName>,
     },
     AcquireOutcome {
         schema_version: u32,
@@ -88,6 +91,28 @@ pub enum Frame {
         decision: String,
         recorded: bool,
     },
+    JitRequest {
+        schema_version: u32,
+        id: String,
+        runner_name: RunnerName,
+    },
+    RemoveRunner {
+        schema_version: u32,
+        id: String,
+        runner_id: RunnerId,
+    },
+    CommandResult {
+        schema_version: u32,
+        id: String,
+        command_id: String,
+        ok: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runner_id: Option<RunnerId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        encoded_jit_config: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 impl Frame {
@@ -102,7 +127,10 @@ impl Frame {
             | Self::AcquireOutcome { schema_version, .. }
             | Self::Session { schema_version, .. }
             | Self::VmDelete { schema_version, .. }
-            | Self::Ack { schema_version, .. } => *schema_version,
+            | Self::Ack { schema_version, .. }
+            | Self::JitRequest { schema_version, .. }
+            | Self::RemoveRunner { schema_version, .. }
+            | Self::CommandResult { schema_version, .. } => *schema_version,
         }
     }
 
@@ -117,7 +145,10 @@ impl Frame {
             | Self::AcquireOutcome { id, .. }
             | Self::Session { id, .. }
             | Self::VmDelete { id, .. }
-            | Self::Ack { id, .. } => id,
+            | Self::Ack { id, .. }
+            | Self::JitRequest { id, .. }
+            | Self::RemoveRunner { id, .. }
+            | Self::CommandResult { id, .. } => id,
         }
     }
 
@@ -140,6 +171,9 @@ impl Frame {
             Self::Session { .. } => "session",
             Self::VmDelete { .. } => "vm_delete",
             Self::Ack { .. } => "ack",
+            Self::JitRequest { .. } => "jit_request",
+            Self::RemoveRunner { .. } => "remove_runner",
+            Self::CommandResult { .. } => "command_result",
         }
     }
 

@@ -147,6 +147,10 @@ pub(crate) fn load_state(connection: &Connection) -> Result<LedgerState, LedgerE
     }
     drop(hosts);
 
+    let highest: i64 = connection
+        .query_row("SELECT COALESCE(MAX(id), 0) FROM reservation", [], |row| row.get(0))
+        .map_err(StoreError::Sqlite)?;
+    state.advance_past(u64::try_from(highest).unwrap_or(0));
     let mut reservations = connection
         .prepare(
             "SELECT r.id, r.incarnation, r.profile_revision_id, r.vcpu, r.memory_gib,

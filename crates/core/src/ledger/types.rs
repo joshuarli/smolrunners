@@ -190,6 +190,40 @@ pub(crate) fn demand_cost(shape: Shape, overhead: VmmOverhead, disk_bytes: u64) 
     }
 }
 
+const CPU_PERIOD_US: u64 = 100_000;
+const GUEST_PIDS_MAX: u32 = 512;
+
+/// Host cgroup limits for one guest: its shape plus the VMM overhead the ledger reserves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HostAllowance {
+    pub cpu_quota_us: u64,
+    pub memory_bytes: u64,
+    pub pids: u32,
+}
+
+impl HostAllowance {
+    pub fn for_shape(shape: Shape, overhead: VmmOverhead) -> Self {
+        let cost = demand_cost(shape, overhead, 0);
+        Self {
+            cpu_quota_us: cost.vcpu_milli.saturating_mul(CPU_PERIOD_US) / 1000,
+            memory_bytes: cost.memory_mib.saturating_mul(1024 * 1024),
+            pids: GUEST_PIDS_MAX,
+        }
+    }
+
+    pub fn cpu_max(&self) -> String {
+        format!("{} {CPU_PERIOD_US}", self.cpu_quota_us)
+    }
+
+    pub fn memory_max(&self) -> String {
+        self.memory_bytes.to_string()
+    }
+
+    pub fn pids_max(&self) -> String {
+        self.pids.to_string()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReservationRequest {
     pub revision_id: ProfileRevisionId,

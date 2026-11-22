@@ -508,3 +508,39 @@ fn ledger_sqlite_restores_capacity_metadata_and_active_reservations() {
         Err(LedgerError::StaleHostIncarnation { .. })
     ));
 }
+
+#[test]
+fn host_allowance_matches_the_reserved_cost_for_the_shape() {
+    use crate::domain::Shape;
+    use crate::ledger::{HostAllowance, VmmOverhead};
+    let shape = Shape::new(4, 8).expect("shape");
+    let allowance = HostAllowance::for_shape(shape, VmmOverhead::new(512, 250));
+    assert_eq!(allowance.cpu_max(), "425000 100000");
+    assert_eq!(allowance.memory_bytes, (8 * 1024 + 512) * 1024 * 1024);
+    let cost = crate::ledger::types::demand_cost(shape, VmmOverhead::new(512, 250), 0);
+    assert_eq!(allowance.cpu_quota_us, cost.vcpu_milli * 100);
+    assert_eq!(allowance.memory_bytes, cost.memory_mib * 1024 * 1024);
+}
+
+#[test]
+fn a_reopened_ledger_never_reuses_a_released_reservation_id() {
+    let mut ledger = Ledger::from_connection(Connection::open_in_memory().expect("in-memory db"))
+        .expect("ledger over in-memory sqlite");
+    let key = HostKey::new("h1");
+    ledger.register_host(host("h1", 1, 16, 32)).expect("register");
+    let grant = |ledger: &mut Ledger| match ledger
+        .reserve(ReservationRequest::new(&revision("small", 2, 4), 0, None), Tick::new(7))
+        .expect("reserve")
+    {
+        ReservationOutcome::Granted(offer) => offer,
+        ReservationOutcome::Pending { status, .. } => panic!("expected grant, got {status:?}"),
+    };
+    let first = grant(&mut ledger);
+    ledger
+        .release(first.reservation_id, &key, HostIncarnation::new(1), Tick::new(8))
+        .expect("release");
+    let connection = ledger.into_connection().expect("connection");
+    let mut reopened = Ledger::from_connection(connection).expect("reopen ledger");
+    let second = grant(&mut reopened);
+    assert!(second.reservation_id.get() > first.reservation_id.get());
+}

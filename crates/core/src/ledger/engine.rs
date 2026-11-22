@@ -475,6 +475,11 @@ impl LedgerState {
         self.hosts.insert(capacity.host_key.clone(), capacity);
     }
 
+    pub(crate) fn advance_past(&mut self, highest_id: u64) {
+        self.next_id = self.next_id.max(highest_id + 1);
+        self.next_sequence = self.next_sequence.max(highest_id + 1);
+    }
+
     pub(crate) fn restore_reservation(&mut self, reservation: Reservation) {
         self.next_id = self.next_id.max(reservation.id.get() + 1);
         self.next_sequence = self.next_sequence.max(reservation.sequence + 1);
