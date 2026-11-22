@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use crate::domain::Shape;
 
@@ -188,8 +188,8 @@ impl RunRecord {
     }
 }
 
-pub fn group_runs(runs: impl IntoIterator<Item = RunRecord>) -> BTreeMap<ComparableRunKey, Vec<RunRecord>> {
-    let mut groups: BTreeMap<ComparableRunKey, Vec<RunRecord>> = BTreeMap::new();
+pub fn group_runs(runs: impl IntoIterator<Item = RunRecord>) -> HashMap<ComparableRunKey, Vec<RunRecord>> {
+    let mut groups: HashMap<ComparableRunKey, Vec<RunRecord>> = HashMap::new();
     for run in runs {
         groups.entry(run.key.clone()).or_default().push(run);
     }

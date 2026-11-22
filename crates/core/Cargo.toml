@@ -8,13 +8,5 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
 sha2.workspace = true
 rusqlite.workspace = true
-lexopt.workspace = true
-laputa-smol.workspace = true
-laputa-async-io.workspace = true
-laputa-async-net.workspace = true
-laputa-async-executor.workspace = true
-
-[dev-dependencies]

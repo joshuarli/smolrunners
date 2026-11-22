@@ -19,16 +19,27 @@ serde_json = "1.0"
 toml = "1"
 sha2 = "0.10"
 lexopt = "0.3"
-laputa-smol = { version = "=0.3.0", registry = "mycrates" }
-laputa-async-io = { version = "=0.3.0", registry = "mycrates" }
-laputa-async-net = { version = "=0.3.0", registry = "mycrates" }
-laputa-async-executor = { version = "=0.3.0", registry = "mycrates" }
 rusqlite = { version = "0.43", features = ["bundled"] }
-rustix = { package = "laputa-rustix", version = "=1.1.6", registry = "mycrates" }
 rustls = "0.23"
 rustls-pemfile = "2"
 rcgen = "0.14"
 
+[profile.dev]
+incremental = false
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
-strip = true
+opt-level = 3
 lto = "thin"
+panic = "abort"
+strip = false
+
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = true

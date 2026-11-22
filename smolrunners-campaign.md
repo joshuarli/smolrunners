@@ -59,7 +59,7 @@ Each prescription carries its reason and what would reverse it.
   | Go | 1.27.3 toolchain archives. |
   | Base images | Debian 13 (13.8 or later) and Alpine 3.24 (3.24.4 or later) OCI images, pinned by digest. |
   | Docker | Static binaries for Docker Engine 29.x, the bundled containerd, and Buildx, from `download.docker.com/linux/static/stable/<arch>/` and GitHub releases. |
-  | Rust | Stable 1.99.1, pinned in `rust-toolchain.toml`. |
+  | Rust | The fleet nightly, pinned in `rust-toolchain.toml` with `rust-src` and `clippy`. |
   | smolith crates | `laputa-smol` and `laputa-async-*` at exact `=0.3.0`, and `h12tiny-*` at exact `=0.9.0`, from the `mycrates` registry configured in `.cargo/config.toml`, as in `laputa-systems/xsh`. |
 
   *Reason:* the draft's anchors were verified on 2026-11-21. The v1.36.0 assets and checksums exist, the runner v2.338.2 linux-arm64 and linux-x64 assets exist, the scale-set commit exists, issue #133 is still open, and local Go 1.27.3 and Rust stable 1.99.1 are installed. *Reverse:* a pinned version that fails its qualification. Requalify the next release and record why.

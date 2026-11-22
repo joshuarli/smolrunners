@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use crate::domain::ProfileRevision;
 use crate::ledger::error::{LedgerError, PendingReason, PendingStatus, UnschedulableReason};
@@ -27,9 +27,9 @@ pub enum ReservationOutcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerState {
     config: LedgerConfig,
-    hosts: BTreeMap<HostKey, HostCapacity>,
-    reservations: BTreeMap<ReservationId, Reservation>,
-    statuses: BTreeMap<ReservationId, PendingStatus>,
+    hosts: HashMap<HostKey, HostCapacity>,
+    reservations: HashMap<ReservationId, Reservation>,
+    statuses: HashMap<ReservationId, PendingStatus>,
     next_id: u64,
     next_sequence: u64,
     last_barrier: Option<u64>,
@@ -39,9 +39,9 @@ impl LedgerState {
     pub fn new(config: LedgerConfig) -> Self {
         Self {
             config,
-            hosts: BTreeMap::new(),
-            reservations: BTreeMap::new(),
-            statuses: BTreeMap::new(),
+            hosts: HashMap::new(),
+            reservations: HashMap::new(),
+            statuses: HashMap::new(),
             next_id: 1,
             next_sequence: 1,
             last_barrier: None,
@@ -57,7 +57,9 @@ impl LedgerState {
     }
 
     pub fn hosts(&self) -> impl Iterator<Item = &HostCapacity> {
-        self.hosts.values()
+        let mut hosts: Vec<_> = self.hosts.values().collect();
+        hosts.sort_unstable_by(|left, right| left.host_key.cmp(&right.host_key));
+        hosts.into_iter()
     }
 
     pub fn host(&self, host_key: &HostKey) -> Option<&HostCapacity> {
@@ -65,7 +67,9 @@ impl LedgerState {
     }
 
     pub fn reservations(&self) -> impl Iterator<Item = &Reservation> {
-        self.reservations.values()
+        let mut reservations: Vec<_> = self.reservations.values().collect();
+        reservations.sort_unstable_by_key(|reservation| reservation.id);
+        reservations.into_iter()
     }
 
     pub fn reservation(&self, id: ReservationId) -> Option<&Reservation> {
@@ -225,11 +229,13 @@ impl LedgerState {
     }
 
     pub fn expired_hosts(&self, now: Tick, lease_ms: u64) -> Vec<HostKey> {
-        self.hosts
+        let mut expired: Vec<_> = self.hosts
             .values()
             .filter(|host| now.elapsed_since(host.last_contact) >= lease_ms)
             .map(|host| host.host_key.clone())
-            .collect()
+            .collect();
+        expired.sort_unstable();
+        expired
     }
 
     pub fn mark_busy(
@@ -401,7 +407,7 @@ impl LedgerState {
 
             if !due {
                 if let Some(zone) = &request.preferred_cache_zone {
-                    let zone_hosts: Vec<HostKey> = self
+                    let mut zone_hosts: Vec<HostKey> = self
                         .hosts
                         .values()
                         .filter(|host| {
@@ -411,6 +417,7 @@ impl LedgerState {
                         })
                         .map(|host| host.host_key.clone())
                         .collect();
+                    zone_hosts.sort_unstable();
                     if !zone_hosts.is_empty() {
                         let overhead = self.hosts[&zone_hosts[0]].vmm_overhead;
                         let cost = request.cost(overhead);
@@ -520,8 +527,8 @@ impl LedgerState {
         Ok(())
     }
 
-    fn compute_usage(&self) -> BTreeMap<HostKey, Usage> {
-        let mut usage: BTreeMap<HostKey, Usage> = self
+    fn compute_usage(&self) -> HashMap<HostKey, Usage> {
+        let mut usage: HashMap<HostKey, Usage> = self
             .hosts
             .keys()
             .map(|host_key| (host_key.clone(), Usage::default()))
@@ -593,7 +600,7 @@ impl LedgerState {
         None
     }
 
-    fn candidate_hosts(&self, request: &ReservationRequest, usage: &BTreeMap<HostKey, Usage>) -> Vec<HostKey> {
+    fn candidate_hosts(&self, request: &ReservationRequest, usage: &HashMap<HostKey, Usage>) -> Vec<HostKey> {
         let mut candidates = Vec::new();
         for host in self.hosts.values() {
             if !host.admission.is_eligible() || host.arch != request.arch {
@@ -621,7 +628,7 @@ impl LedgerState {
     fn reclaim_plan(
         &self,
         request: &ReservationRequest,
-        usage: &BTreeMap<HostKey, Usage>,
+        usage: &HashMap<HostKey, Usage>,
     ) -> Option<(HostKey, Vec<ReservationId>)> {
         let mut candidates = Vec::new();
         for host in self.hosts.values() {
@@ -653,6 +660,7 @@ impl LedgerState {
             if Self::fits(host, cost, &after_reclaim) {
                 let cache_mismatch =
                     request.preferred_cache_zone.as_ref() != host.cache_zone.as_ref();
+                ids.sort_unstable();
                 candidates.push((cache_mismatch, host.host_key.clone(), ids));
             }
         }
@@ -700,7 +708,7 @@ impl LedgerState {
         &mut self,
         id: ReservationId,
         host_key: &HostKey,
-        usage: &mut BTreeMap<HostKey, Usage>,
+        usage: &mut HashMap<HostKey, Usage>,
     ) -> CapacityOffer {
         let (incarnation, cost) = {
             let host = &self.hosts[host_key];
@@ -725,7 +733,7 @@ impl LedgerState {
         }
     }
 
-    fn release_internal(&mut self, id: ReservationId, usage: &mut BTreeMap<HostKey, Usage>) {
+    fn release_internal(&mut self, id: ReservationId, usage: &mut HashMap<HostKey, Usage>) {
         let (host_key, cost) = {
             let reservation = &self.reservations[&id];
             let host_key = reservation.host.clone().expect("active reservation has a host");

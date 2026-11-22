@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use rusqlite::{Connection, params};
@@ -359,7 +359,7 @@ fn ledger_property_fixed_seed_never_double_promises() {
             }
         }
 
-        let mut shadow: BTreeMap<HostKey, Usage> = BTreeMap::new();
+        let mut shadow: HashMap<HostKey, Usage> = HashMap::new();
         for reservation in state.reservations().filter(|r| r.state.occupies_capacity()) {
             let key = reservation.host.clone().expect("active reservation has a host");
             let overhead = state.host(&key).expect("host is registered").vmm_overhead;

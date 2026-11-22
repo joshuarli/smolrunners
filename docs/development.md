@@ -7,7 +7,7 @@ the vendored `bootstrap/buildlib-run` shim; all other tools are expected on the 
 
 | Tool | Version | Consumer | Slice |
 | --- | --- | --- | --- |
-| Rust + Cargo | 1.99.1 | all Rust crates | P0-ENV |
+| Rust + Cargo | See `rust-toolchain.toml` | all Rust crates | P0-ENV |
 | Go | 1.27.3 | `adapter/` | P0-ENV |
 | Python (shim) | 3.15.1 | `scripts/fetch-inputs.py`, `scripts/install-runtime.py` | P0-ENV |
 | laputa-buildlib (shim) | 0.2.0 | pinned-input reader and fetcher | P0-ENV |
@@ -35,6 +35,7 @@ Scratch and downloaded inputs live under `.work/`, which is ignored through `.gi
 Guest binaries are build artifacts, not source. They are ignored by git; `make test-vm` runs
 `scripts/build-vm-binaries.sh` to cross-compile them from the current checkout into
 `tests/vm/bin/`, `tests/cli/bin/` and `crates/smolrunners/src/host/cache/` before every VM gate.
+The pilot bundle uses the `dist` profile and rebuilds Rust std from source.
 A fresh checkout therefore has no binary fixtures until a VM target (or the script directly) is
 run. Do not commit those files: they dominated the repository size and made pushes impractical.
 

@@ -153,7 +153,7 @@ fn proc_environ(pid: u32, name: &str) -> Option<String> {
 }
 
 fn cgroup_file(cgroup: &str, name: &str) -> Option<String> {
-    let base = cgroup.strip_prefix("/sys/fs/cgroup/").unwrap_or(cgroup);
+    let base = cgroup.trim_prefix("/sys/fs/cgroup/");
     let path = format!("/sys/fs/cgroup/{base}/{name}");
     let bytes = fs::read(&path).ok()?;
     Some(String::from_utf8_lossy(&bytes).trim().to_string())

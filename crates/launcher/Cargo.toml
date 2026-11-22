@@ -8,6 +8,3 @@ publish.workspace = true
 [[bin]]
 name = "smolrunners-launcher"
 path = "src/main.rs"
-
-[dependencies]
-rustix.workspace = true

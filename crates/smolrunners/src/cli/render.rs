@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use serde_json::Value;
 
@@ -52,7 +52,7 @@ pub fn csv(rows: &[Value]) -> String {
     if rows.is_empty() {
         return String::new();
     }
-    let mut columns = BTreeSet::new();
+    let mut columns = HashSet::new();
     for row in rows {
         if let Value::Object(map) = row {
             for key in map.keys() {
@@ -60,7 +60,8 @@ pub fn csv(rows: &[Value]) -> String {
             }
         }
     }
-    let columns: Vec<String> = columns.into_iter().collect();
+    let mut columns: Vec<String> = columns.into_iter().collect();
+    columns.sort_unstable();
     let mut out = columns.join(",");
     out.push('\n');
     for row in rows {

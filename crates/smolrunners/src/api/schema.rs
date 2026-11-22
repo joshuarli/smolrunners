@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 
 pub const API_SCHEMA_VERSION: u32 = 1;
@@ -11,9 +11,11 @@ pub struct ApiReply {
     #[serde(default)]
     pub command: String,
     #[serde(default)]
-    pub units: BTreeMap<String, String>,
+    #[serde(serialize_with = "serialize_string_map")]
+    pub units: HashMap<String, String>,
     #[serde(default)]
-    pub missing: BTreeMap<String, String>,
+    #[serde(serialize_with = "serialize_string_map")]
+    pub missing: HashMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<Value>,
     #[serde(default)]
@@ -26,7 +28,7 @@ impl ApiReply {
             status,
             command: command.to_owned(),
             units: units(),
-            missing: BTreeMap::new(),
+            missing: HashMap::new(),
             scope: None,
             data,
         }
@@ -55,8 +57,10 @@ impl ApiReply {
 pub struct JsonOutput {
     pub schema_version: u32,
     pub command: String,
-    pub units: BTreeMap<String, String>,
-    pub missing: BTreeMap<String, String>,
+    #[serde(serialize_with = "serialize_string_map")]
+    pub units: HashMap<String, String>,
+    #[serde(serialize_with = "serialize_string_map")]
+    pub missing: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<Value>,
     pub data: Value,
@@ -77,7 +81,13 @@ impl JsonOutput {
     }
 }
 
-pub fn units() -> BTreeMap<String, String> {
+fn serialize_string_map<S: Serializer>(entries: &HashMap<String, String>, serializer: S) -> Result<S::Ok, S::Error> {
+    let mut sorted: Vec<_> = entries.iter().collect();
+    sorted.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    serializer.collect_map(sorted)
+}
+
+pub fn units() -> HashMap<String, String> {
     [
         ("vcpu", "count"),
         ("memory_gib", "gib"),

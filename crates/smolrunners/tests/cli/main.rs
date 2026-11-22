@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use serde_json::{Value, json};
 use smolrunners::api::ApiReply;
@@ -585,5 +585,4 @@ fn cli_jobs_report_format_csv() {
     );
     assert!(lines[1].contains("build"));
     assert!(lines[1].contains("0.75"));
-    let _ = BTreeMap::<String, String>::new();
 }

@@ -12,7 +12,7 @@ if [ "${SMOLRUNNERS_PRINT_ARCH:-}" = 1 ]; then
 fi
 bundle="$repo/.work/pilot/$arch"
 mkdir -p "$repo/.work/tmp" "$bundle/bin" "$bundle/scripts" "$bundle/images" "$bundle/.work/cache/inputs"
-ARCH="$arch" sh "$repo/scripts/build-vm-binaries.sh"
+ARCH="$arch" sh "$repo/scripts/build-vm-binaries.sh" --dist
 if [ "$arch" = aarch64 ]; then
   for name in smolrunners smolrunners-launcher smolrunners-collector smolrunners-cache; do cp "$repo/tests/vm/bin/$name" "$bundle/bin/$name"; done
   cp "$repo/tests/cli/bin/smolrunners-adapter" "$bundle/bin/"

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::path::Path;
 
 const INHERITED: &[&str] = &[
@@ -31,8 +31,8 @@ pub fn is_policy_variable(name: &str) -> bool {
         .any(|prefix| name.starts_with(prefix))
 }
 
-pub fn sanitized(vm_dir: &Path, runtime: &Path) -> BTreeMap<String, String> {
-    let mut variables = BTreeMap::new();
+pub fn sanitized(vm_dir: &Path, runtime: &Path) -> HashMap<String, String> {
+    let mut variables = HashMap::new();
     for name in INHERITED {
         if let Ok(value) = std::env::var(name) {
             if is_policy_variable(name) {

@@ -13,6 +13,11 @@ if [ "${SMOLRUNNERS_PRINT_ARCH:-}" = 1 ]; then
   printf 'target=%s\nzig_target=%s\ngoarch=%s\n' "$target" "$zig_target" "$goarch"
   exit 0
 fi
+case ${1:-} in
+  '') profile=debug; set -- ;;
+  --dist) profile=dist; set -- --profile dist -Z build-std=std -Z build-std-features= ;;
+  *) printf 'usage: build-vm-binaries.sh [--dist]\n' >&2; exit 2 ;;
+esac
 zig=${ZIG:-$(command -v zig || true)}
 [ -n "$zig" ] && command -v "$zig" >/dev/null 2>&1 || { printf 'build-vm-binaries: zig not found\n' >&2; exit 2; }
 tmp=${TMPDIR:-$repo/.work/tmp}/cross
@@ -34,10 +39,10 @@ chmod 0755 "$wrapper"
 printf 'build-vm-binaries: cross-building %s from current source\n' "$target"
 cd "$repo"
 case $arch in
-  aarch64) CC_aarch64_unknown_linux_musl="$wrapper" AR_aarch64_unknown_linux_musl="$zig ar" CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$wrapper" cargo build --workspace --target "$target" ;;
-  x86_64) CC_x86_64_unknown_linux_musl="$wrapper" AR_x86_64_unknown_linux_musl="$zig ar" CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$wrapper" cargo build --workspace --target "$target" ;;
+  aarch64) CC_aarch64_unknown_linux_musl="$wrapper" AR_aarch64_unknown_linux_musl="$zig ar" CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$wrapper" cargo build --locked --workspace --target "$target" "$@" ;;
+  x86_64) CC_x86_64_unknown_linux_musl="$wrapper" AR_x86_64_unknown_linux_musl="$zig ar" CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$wrapper" cargo build --locked --workspace --target "$target" "$@" ;;
 esac
-out="$repo/target/$target/debug"
+out="$repo/target/$target/$profile"
 if [ "$arch" = aarch64 ]; then
   bin="$repo/tests/vm/bin"
   mkdir -p "$bin" "$repo/tests/cli/bin"

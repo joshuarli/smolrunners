@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -331,7 +331,7 @@ impl GenerationStore {
     }
 
     pub fn gc(&self) -> Result<Vec<String>> {
-        let mut current_ids = BTreeSet::new();
+        let mut current_ids = HashSet::new();
         let pointers = self.root.join("pointers");
         if pointers.exists() {
             for repository in fs::read_dir(&pointers)? {

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use crate::domain::Shape;
 
@@ -136,31 +136,31 @@ pub fn analyze(runs: &[RunRecord]) -> Recommendation {
         };
     }
 
-    let mut blockers = BTreeSet::new();
-    let hardware: BTreeSet<&str> = runs.iter().map(|r| r.key.hardware_class.as_str()).collect();
+    let mut blockers = Vec::new();
+    let hardware: HashSet<&str> = runs.iter().map(|r| r.key.hardware_class.as_str()).collect();
     if hardware.len() > 1 {
-        blockers.insert(Blocker::MixedHardware);
+        blockers.push(Blocker::MixedHardware);
     }
-    let definitions: BTreeSet<&str> = runs.iter().map(|r| r.definition_id.as_str()).collect();
-    let cohorts: BTreeSet<i64> = runs.iter().map(|r| r.cohort).collect();
+    let definitions: HashSet<&str> = runs.iter().map(|r| r.definition_id.as_str()).collect();
+    let cohorts: HashSet<i64> = runs.iter().map(|r| r.cohort).collect();
     let shapes: HashSet<Shape> = runs.iter().map(|r| r.shape).collect();
     if definitions.len() > 1 || cohorts.len() > 1 || shapes.len() > 1 {
-        blockers.insert(Blocker::ChangedDefinition);
+        blockers.push(Blocker::ChangedDefinition);
     }
     if runs.iter().any(|r| r.oom.blocks_conclusion()) {
-        blockers.insert(Blocker::UnexplainedHostOom);
+        blockers.push(Blocker::UnexplainedHostOom);
     }
     if runs.iter().any(RunRecord::has_missing_coverage) {
-        blockers.insert(Blocker::MissingCoverage);
+        blockers.push(Blocker::MissingCoverage);
     }
 
     let censored: Vec<&RunRecord> = runs.iter().filter(|r| r.is_censored()).collect();
     let uncensored: Vec<&RunRecord> = runs.iter().filter(|r| !r.is_censored()).collect();
     let censored_count = censored.len();
-    let blocker_list: Vec<Blocker> = blockers.into_iter().collect();
+    blockers.sort_unstable();
 
-    if !blocker_list.is_empty() {
-        let names = blocker_list
+    if !blockers.is_empty() {
+        let names = blockers
             .iter()
             .map(|blocker| blocker.as_str())
             .collect::<Vec<_>>()
@@ -173,7 +173,7 @@ pub fn analyze(runs: &[RunRecord]) -> Recommendation {
             nearby_profile: None,
             confidence: Confidence::Low,
             falsifier: format!("resolve {names} and rerun the grouped analysis on the same comparable key"),
-            blockers: blocker_list,
+            blockers,
             comparable_runs: total,
             censored_runs: censored_count,
         };
@@ -282,8 +282,10 @@ fn mean_memory_gib_of(runs: &[&RunRecord]) -> f64 {
 }
 
 pub fn recommend_all(runs: impl IntoIterator<Item = RunRecord>) -> Vec<(ComparableRunKey, Recommendation)> {
-    group_runs(runs)
+    let mut recommendations: Vec<_> = group_runs(runs)
         .into_iter()
         .map(|(key, group)| (key, analyze(&group)))
-        .collect()
+        .collect();
+    recommendations.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    recommendations
 }

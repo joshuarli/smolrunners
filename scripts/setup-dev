@@ -9,8 +9,7 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 command -v cargo >/dev/null 2>&1 || fail "cargo is required"
 command -v go >/dev/null 2>&1 || fail "go is required"
 
-rust_version="$(rustc --version | awk '{print $2}')"
-[ "$rust_version" = "1.99.1" ] || fail "Rust 1.99.1 is required, found $rust_version"
+(cd "$repo" && rustc --version >/dev/null) || fail "the toolchain in rust-toolchain.toml is required"
 go_version="$(go version | awk '{print $3}')"
 [ "$go_version" = "go1.27.3" ] || fail "Go 1.27.3 is required, found $go_version"
 

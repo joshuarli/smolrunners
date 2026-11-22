@@ -90,6 +90,8 @@ fn sizing_groups_by_the_nine_comparable_dimensions_and_keeps_failures_and_ooms()
 
     let recommendations = recommend_all([success, cold]);
     assert_eq!(recommendations.len(), 2);
+    assert_eq!(recommendations[0].0.cache_state, CacheState::Cold);
+    assert_eq!(recommendations[1].0.cache_state, CacheState::Warm);
 }
 
 #[test]

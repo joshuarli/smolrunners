@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -76,7 +76,7 @@ fn sizing_runs(state: &State) -> Vec<RunRecord> {
         let mut peak_memory_gib = 0.0f64;
         let mut memory_sum = 0.0f64;
         let mut memory_samples = 0u32;
-        let mut captures: BTreeMap<i64, (bool, bool)> = BTreeMap::new();
+        let mut captures: HashMap<i64, (bool, bool)> = HashMap::new();
         for row in &rows {
             match row.metric.as_str() {
                 "cpu.busy_cores" => {
