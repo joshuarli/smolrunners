@@ -52,7 +52,7 @@ up() {
   test -x "$darwin/smolvm" || fail "install the macOS runtime: scripts/install-runtime smolvm-darwin-arm64 .work/runtime/darwin-arm64"
   test -f "$linux_runtime/smolvm" || fail "install the Linux runtime: scripts/install-runtime smolvm-linux-arm64 .work/runtime/linux-arm64"
   if ! exists; then
-    native machine create --name "$machine" -I debian:13 --nested --net \
+    native machine create --name "$machine" -I debian:13 --nested --net -p 18787:8787 \
       --cpus "$cpus" --mem "$memory" --storage 60 --overlay 20 \
       -v "$repo:/mnt/repo:ro" -v "$linux_runtime:/opt/runtime"
   fi

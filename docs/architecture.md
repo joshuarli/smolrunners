@@ -31,14 +31,34 @@ The boundary report is evaluated from that marker, so a later change to host con
 rewrite what a running execution was checked against. The reaper uses the recorded start time to
 avoid treating a reused PID as the original owner.
 
-## Current integration boundary
+## Connected coordinator
 
-The API's control records live in `state.json`, while sample history lives in SQLite. The core
-store, ledger and lifecycle are exercised by component gates but are not yet the running
-coordinator's authority, and `serve` does not supervise the adapter or execute jobs. The `INT1`
-milestone connects those paths so one local job runs through the production coordinator and host
-with live telemetry and recovery after a coordinator restart. Until it is accepted, component
-gates are evidence that a piece works, not that the product is connected.
+`smolrunners serve --pilot CONFIG.toml` is the running product. It supervises the Go adapter
+(`docs/adapter-protocol.md`), records every adapter event in the lifecycle store before
+acknowledging it, and keeps capacity in the ledger. Its executions live in the same `State` the
+HTTP API serves, so `/api/v1/jobs`, the CLI and the UI read the records and samples the coordinator
+writes.
+
+An acknowledgement never waits for a VM. On a `capacity` event the coordinator reserves capacity,
+writes the execution record with its runner name and effective limits, then acks. A worker thread
+per execution requests a fresh JIT config, writes it to a root-only 0600 file and starts a detached
+`host provision`. The host agent deletes the file on read, delivers the config into the guest over
+stdin, runs the entrypoint (`run-job`, which starts the official runner) and tears the guest down
+when the runner exits or a stop is requested. The worker tails the agent's log and samples the
+guest through `host exec`. After `REMOVED` it releases the reservation, deregisters the runner and
+records the result. GitHub's `job_started` and `job_completed` join the execution by runner name.
+
+A restarted coordinator re-reads each live execution's host log. Running guests keep going under
+their host agents, and sampling resumes. Stops (operator cancel, idle timeout, scale-down,
+completion grace) are decided by `coordinator/plan.rs` and sent as host stop requests.
+
+The profile in the pilot config is the single source for the guest shape, the host
+`cpu.max`/`memory.max` (`HostAllowance`: shape plus VMM overhead, the same cost the ledger
+reserves), and the limits frozen on each execution record.
+
+Host state is private. Markers, control files, runner logs and UID claims are root-only (0700). Each
+VM's SmolVM state, `HOME` and `TMPDIR` live under `vms/<machine>`, owned by that VM's UID with mode
+0700.
 
 The transport deviation above is deliberate: the pinned `h12tiny` crates compiled empty without
 protocol features, and enabling `http1` exceeded the cold-build bound. The API uses `std::net`

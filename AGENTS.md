@@ -13,7 +13,9 @@ Follow the owner's working contract and `smolrunners-campaign.md`. Scratch goes 
 | `make test-fast` | `cargo test --workspace` and `go test ./...`, no VM |
 | `make test-vm T=<name>` | Start `sr-dev`, sync the tree, run `tests/vm/<name>.sh` in the guest |
 | `make test-vm-all` | Every `tests/vm/*.sh` |
-| `make live-*` | Run on the owner's host; without credentials exits 2 naming the input |
+| `make pilot-bundle ARCH=x86_64` | Cross-build the static x86_64 pilot bundle into `.work/pilot/` |
+| `make live-pilot SMOLRUNNERS_PILOT_CONFIG=…` | Run the coordinator against GitHub on the owner's host (`docs/pilot.md`) |
+| `make live-*` | Other live gates; without credentials exit 2 naming the input |
 
 Pinned inputs are declared in `sources.lock.json` and justified in `docs/upstream-evidence.md`.
 OCI images are pinned by digest in `images/*/image.toml`. Download only through

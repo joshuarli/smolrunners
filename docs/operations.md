@@ -44,8 +44,8 @@ caller cannot declare its identity in the body. Generate a test CA and certifica
 `tests/cli/generate-certs.sh`; no private keys are committed. Without the TLS flags the listener
 is plain HTTP and reports `mtls: false` — use it only for loopback operator commands.
 
-The connected coordinator (`serve --scenario …`) is built from current source by
-`make test-vm T=connected_job` and uses the core store, ledger and lifecycle as authority.
+The connected coordinator is `serve --pilot CONFIG.toml`; `docs/pilot.md` is the runbook for a
+live host. `make test-vm T=connected_job` runs it inside the nested host against the fake broker.
 
 The nested Linux host is separate from the coordinator:
 
@@ -65,9 +65,10 @@ name. `make test-vm T=<name>` performs `up`, `sync` and `exec` in one step.
 No service-manager unit is shipped. Run `serve` under the process supervisor of your choice with
 these requirements:
 
-- a stable `SMOLRUNNERS_STATE_DIR` across restarts, on a filesystem that supports SQLite WAL;
+- a stable `state_dir` across restarts, on a filesystem that supports SQLite WAL;
 - one coordinator process per state directory — concurrent writers are not supported;
-- a bounded restart policy; `serve` does not yet perform recovery of in-flight executions;
+- a restart policy that does not kill the process group: host agents run in their own process
+  groups so guests survive a coordinator restart, and the restarted coordinator reattaches to them;
 - no automatic cleaning of `.work/` while a host or guest is running.
 
 Capture stderr: startup errors, including SQLite pragma verification failures, are emitted there.
@@ -98,8 +99,7 @@ Inputs, the Rust toolchain and the OCI images are pinned. Update a pin only by c
 
 ## Acceptance caveats
 
-`make test-vm` syncs source but still executes committed binaries under `tests/vm/bin` and
-`tests/cli/bin`. A passing VM gate therefore proves the supplied binary's behavior, not
-necessarily current source. A source-built cross-compilation recipe for the nested guest is not
-available in this revision; the coordinator is built from source on the host for connected-path
-tests. Treat VM gates as component evidence until that gap is closed.
+`make test-vm` cross-builds the guest binaries from current source (`scripts/build-vm-binaries.sh`)
+and `scripts/linux-host.sh sync` ships them with the tree. Before 2026-11-22 the sync skipped the
+gitignored binary directories, so VM gate records from before then may have exercised stale
+binaries.
