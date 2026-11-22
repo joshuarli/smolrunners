@@ -1,5 +1,7 @@
 use crate::host::config::Config;
 use crate::host::environment;
+use crate::host::marker::Marker;
+use std::path::PathBuf;
 use serde::Deserialize;
 use std::process::{Child, Command, Output};
 
@@ -16,30 +18,58 @@ struct Envelope {
 
 pub struct Smolvm<'a> {
     config: &'a Config,
+    vm_dir: PathBuf,
+    confinement: Option<Confinement>,
+}
+
+struct Confinement {
+    uid: u32,
+    cgroup: String,
+    cpu_max: String,
+    memory_max: String,
+    pids_max: String,
 }
 
 impl<'a> Smolvm<'a> {
-    pub fn new(config: &'a Config) -> Self {
-        Self { config }
+    pub fn unconfined(config: &'a Config, machine: &str) -> Self {
+        Self {
+            config,
+            vm_dir: config.vm_dir(machine),
+            confinement: None,
+        }
     }
 
-    fn command_as(&self, args: &[String], cgroup: Option<&str>, uid: u32) -> Command {
-        let mut command = match cgroup {
-            Some(cgroup) => {
+    pub fn for_marker(config: &'a Config, marker: &Marker) -> Self {
+        Self {
+            config,
+            vm_dir: config.vm_dir(&marker.machine),
+            confinement: Some(Confinement {
+                uid: marker.uid,
+                cgroup: marker.cgroup.clone(),
+                cpu_max: marker.cpu_max.clone(),
+                memory_max: marker.memory_max.clone(),
+                pids_max: marker.pids_max.clone(),
+            }),
+        }
+    }
+
+    pub fn command(&self, args: &[&str]) -> Command {
+        let mut command = match &self.confinement {
+            Some(confinement) => {
                 let mut launcher = Command::new(&self.config.launcher);
                 launcher
                     .arg("--uid")
-                    .arg(uid.to_string())
+                    .arg(confinement.uid.to_string())
                     .arg("--gid")
-                    .arg(uid.to_string())
+                    .arg(confinement.uid.to_string())
                     .arg("--cgroup")
-                    .arg(cgroup)
+                    .arg(&confinement.cgroup)
                     .arg("--cpu-max")
-                    .arg(&self.config.cpu_max)
+                    .arg(&confinement.cpu_max)
                     .arg("--memory-max")
-                    .arg(&self.config.memory_max)
+                    .arg(&confinement.memory_max)
                     .arg("--pids-max")
-                    .arg(&self.config.pids_max)
+                    .arg(&confinement.pids_max)
                     .arg("--net-allow")
                     .arg(&self.config.net_allow)
                     .arg("--")
@@ -49,7 +79,7 @@ impl<'a> Smolvm<'a> {
             None => Command::new(self.config.smolvm_binary()),
         };
         command.env_clear();
-        for (name, value) in environment::sanitized(&self.config.state, &self.config.runtime) {
+        for (name, value) in environment::sanitized(&self.vm_dir, &self.config.runtime) {
             command.env(name, value);
         }
         command
@@ -58,24 +88,19 @@ impl<'a> Smolvm<'a> {
             .arg("--error-format")
             .arg("json")
             .arg("--state-dir")
-            .arg(self.config.smolvm_state())
+            .arg(self.vm_dir.join("smolvm"))
             .args(args);
         command
     }
 
-    pub fn invoke(&self, args: &[&str], cgroup: Option<&str>) -> Result<Output, String> {
-        self.invoke_as(args, cgroup, self.config.uid)
-    }
-
-    pub fn raw_as(&self, args: &[&str], cgroup: Option<&str>, uid: u32) -> Result<Output, String> {
-        let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
-        self.command_as(&owned, cgroup, uid)
+    pub fn raw(&self, args: &[&str]) -> Result<Output, String> {
+        self.command(args)
             .output()
             .map_err(|error| format!("spawn smolvm: {error}"))
     }
 
-    pub fn invoke_as(&self, args: &[&str], cgroup: Option<&str>, uid: u32) -> Result<Output, String> {
-        let output = self.raw_as(args, cgroup, uid)?;
+    pub fn invoke(&self, args: &[&str]) -> Result<Output, String> {
+        let output = self.raw(args)?;
         if output.status.success() {
             return Ok(output);
         }
@@ -83,15 +108,9 @@ impl<'a> Smolvm<'a> {
         Err(format!("{} failed: {} ({})", args.join(" "), error.message, error.code))
     }
 
-    pub fn start_tracked_as(
-        &self,
-        args: &[&str],
-        cgroup: Option<&str>,
-        uid: u32,
-    ) -> Result<Running, String> {
-        let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
+    pub fn start_tracked(&self, args: &[&str]) -> Result<Running, String> {
         let child = self
-            .command_as(&owned, cgroup, uid)
+            .command(args)
             .spawn()
             .map_err(|error| format!("spawn smolvm: {error}"))?;
         Ok(Running { child })
@@ -123,22 +142,18 @@ pub fn parse_failure(output: &Output) -> ErrorBody {
 }
 
 pub fn named_machines(config: &Config) -> Result<Vec<String>, String> {
-    let smolvm = Smolvm::new(config);
-    let output = smolvm.invoke(&["machine", "ls", "--json"], None)?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() || trimmed.starts_with("No machines") {
-        return Ok(Vec::new());
-    }
-    let values: serde_json::Value =
-        serde_json::from_str(trimmed).map_err(|error| format!("parse machine ls: {error}"))?;
+    let entries = match std::fs::read_dir(config.vms_dir()) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("read {}: {error}", config.vms_dir().display())),
+    };
     let mut names = Vec::new();
-    if let Some(array) = values.as_array() {
-        for entry in array {
-            if let Some(name) = entry.get("name").and_then(|value| value.as_str()) {
-                names.push(name.to_string());
-            }
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read vm dir entry: {error}"))?;
+        if let Some(name) = entry.file_name().to_str() {
+            names.push(name.to_string());
         }
     }
+    names.sort();
     Ok(names)
 }

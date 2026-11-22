@@ -27,7 +27,7 @@ fn subcommand_value(args: &[String], index: &mut usize, flag: &str) -> Result<St
 
 fn usage() -> ! {
     eprintln!(
-        "usage: smolrunners host --state-dir DIR --runtime-dir DIR --launcher PATH [options] <reap|provision|stop|env|list>"
+        "usage: smolrunners host --state-dir DIR --runtime-dir DIR --launcher PATH [options] <reap|provision|stop|env|list|exec|storage>"
     );
     std::process::exit(2)
 }
@@ -153,7 +153,7 @@ fn execute(args: &[String]) -> Result<(), String> {
 fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), String> {
     match command {
         "env" => {
-            for (name, value) in environment::sanitized(&config.state, &config.runtime) {
+            for (name, value) in environment::sanitized(&config.vm_dir("example"), &config.runtime) {
                 println!("{name}={value}");
             }
             Ok(())
@@ -167,7 +167,28 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
         }
         "list" => {
             agent::prepare_state(config)?;
-            agent::list(config)
+            agent::list(config, args.iter().any(|argument| argument == "--json"))
+        }
+        "exec" => {
+            let mut name: Option<String> = None;
+            let mut flags: Vec<&str> = Vec::new();
+            let mut index = 0usize;
+            while index < args.len() {
+                match args[index].as_str() {
+                    "--name" => name = Some(subcommand_value(args, &mut index, "--name")?),
+                    "--stream" => flags.push("--stream"),
+                    "-i" => flags.push("-i"),
+                    "--" => break,
+                    other => return Err(format!("exec: unknown option {other}")),
+                }
+                index += 1;
+            }
+            let command = args.get(index + 1..).unwrap_or_default();
+            if command.is_empty() {
+                return Err("exec: missing command after --".to_owned());
+            }
+            let code = agent::exec(config, &name.ok_or("exec: missing --name")?, &flags, command)?;
+            std::process::exit(code)
         }
         "storage" => storage::dispatch(config, args),
         "stop" => {
@@ -192,6 +213,8 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
             let mut overlay = 10u32;
             let mut reservation_id = None;
             let mut execution_id = None;
+            let mut jit_file: Option<PathBuf> = None;
+            let mut entrypoint = "/opt/smolrunners/bin/run-job".to_owned();
             let mut index = 0usize;
             while index < args.len() {
                 match args[index].as_str() {
@@ -231,20 +254,27 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
                                 .map_err(|_| "bad --execution-id")?,
                         )
                     }
+                    "--jit-file" => {
+                        jit_file = Some(PathBuf::from(subcommand_value(args, &mut index, "--jit-file")?))
+                    }
+                    "--entrypoint" => entrypoint = subcommand_value(args, &mut index, "--entrypoint")?,
                     other => return Err(format!("provision: unknown option {other}")),
                 }
                 index += 1;
             }
             agent::provision(
                 config,
-                &role.ok_or("provision: missing --name")?,
-                &image.ok_or("provision: missing --image")?,
-                cpus,
-                memory,
-                storage,
-                overlay,
-                reservation_id,
-                execution_id,
+                agent::ProvisionRequest {
+                    role: role.ok_or("provision: missing --name")?,
+                    image: image.ok_or("provision: missing --image")?,
+                    cpus,
+                    memory_mib: memory,
+                    storage_gib: storage,
+                    overlay_gib: overlay,
+                    reservation_id,
+                    execution_id,
+                    runner: jit_file.map(|jit_file| agent::RunnerLaunch { jit_file, entrypoint }),
+                },
             )
         }
         other => Err(format!("unknown subcommand {other}")),

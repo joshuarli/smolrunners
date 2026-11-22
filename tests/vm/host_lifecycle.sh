@@ -11,15 +11,24 @@ image='alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48
 fail() { printf 'host_lifecycle: %s\n' "$*" >&2; exit 1; }
 
 smolvm() {
+  vm=''
+  previous=''
+  for argument in "$@"; do
+    [ "$previous" = --name ] && vm=$argument
+    previous=$argument
+  done
+  [ -n "$vm" ] || { printf 'smolvm helper: --name is required
+' >&2; return 2; }
+  vmdir="$state/vms/$vm"
   env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    HOME="$state/home" TMPDIR="$state/tmp" \
-    XDG_CONFIG_HOME="$state/home/.config" XDG_CACHE_HOME="$state/home/.cache" \
+    HOME="$vmdir/home" TMPDIR="$vmdir/tmp" \
+    XDG_CONFIG_HOME="$vmdir/home/.config" XDG_CACHE_HOME="$vmdir/home/.cache" \
     SMOLVM_LIB_DIR="$runtime/lib" SMOLVM_AGENT_ROOTFS="$runtime/agent-rootfs" \
-    "$runtime/smolvm" --error-format json --state-dir "$state/smolvm" "$@"
+    "$runtime/smolvm" --error-format json --state-dir "$vmdir/smolvm" "$@"
 }
 
 leftovers() {
-  smolvm machine ls 2>/dev/null | awk '$1 ~ /^sr-/ {print $1}'
+  ls -A "$state/vms" 2>/dev/null || true
 }
 
 host() {
@@ -87,7 +96,7 @@ wait_for_machine() {
 wait_for_gone() {
   count=0
   while [ "$count" -lt 60 ]; do
-    smolvm machine status --name "$1" >/dev/null 2>&1 || return 0
+    [ -d "$state/vms/$1" ] || return 0
     sleep 1
     count=$((count + 1))
   done
@@ -101,6 +110,10 @@ assert_clean() {
   [ -z "$markers" ] || fail "leftover markers: $markers"
   cgroups="$(ls /sys/fs/cgroup 2>/dev/null | awk '/^sr-/ {print}')"
   [ -z "$cgroups" ] || fail "leftover cgroups: $cgroups"
+  admissions="$(ls "$state/storage" 2>/dev/null | awk '/admission/ {print}')"
+  [ -z "$admissions" ] || fail "storage admissions outlived their VMs: $admissions"
+  claims="$(ls -A "$state/uids" 2>/dev/null)"
+  [ -z "$claims" ] || fail "uid claims outlived their VMs: $claims"
 }
 
 [ -x "$agent" ] || fail "missing agent binary at $agent"
@@ -138,8 +151,20 @@ second_name="$(awk '/^CLAIM /{print $2}' "$state/second.log" | head -1)"
 [ "$first_name" != "$second_name" ] || fail "guests share a machine name"
 wait_for_machine "$first_name"
 wait_for_machine "$second_name"
-[ "$(smolvm machine ls 2>/dev/null | awk '$1 ~ /^sr-/ {print $1}' | wc -l | tr -d ' ')" -eq 2 ] \
+[ "$(leftovers | wc -l | tr -d ' ')" -eq 2 ] \
   || fail "expected exactly two running guests"
+for private in markers control logs; do
+  [ "$(stat -c %a "$state/$private")" = 700 ] || fail "$private is not private to the host agent"
+done
+[ "$(stat -c %a "$state")" = 711 ] || fail "host state root is not 0711"
+first_uid="$(stat -c %u "$state/vms/$first_name")"
+second_uid="$(stat -c %u "$state/vms/$second_name")"
+[ "$first_uid" != "$second_uid" ] || fail "two guests share a VM uid"
+[ "$(stat -c %a "$state/vms/$first_name")" = 700 ] || fail "vm state for $first_name is not private"
+setpriv --reuid "$first_uid" --regid "$first_uid" --clear-groups ls "$state/vms/$second_name" >/dev/null 2>&1 \
+  && fail "the first VM uid can read the second VM's state"
+setpriv --reuid "$first_uid" --regid "$first_uid" --clear-groups ls "$state/markers" >/dev/null 2>&1 \
+  && fail "a VM uid can list host markers"
 grep -q '^2147483648$' "/sys/fs/cgroup/$first_name/memory.max" \
   || fail "launcher did not apply memory.max to $first_name"
 grep -q '^2147483648$' "/sys/fs/cgroup/$second_name/memory.max" \

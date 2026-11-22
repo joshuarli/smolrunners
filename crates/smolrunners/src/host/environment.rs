@@ -31,7 +31,7 @@ pub fn is_policy_variable(name: &str) -> bool {
         .any(|prefix| name.starts_with(prefix))
 }
 
-pub fn sanitized(state: &Path, runtime: &Path) -> BTreeMap<String, String> {
+pub fn sanitized(vm_dir: &Path, runtime: &Path) -> BTreeMap<String, String> {
     let mut variables = BTreeMap::new();
     for name in INHERITED {
         if let Ok(value) = std::env::var(name) {
@@ -41,19 +41,19 @@ pub fn sanitized(state: &Path, runtime: &Path) -> BTreeMap<String, String> {
             variables.insert((*name).to_string(), value);
         }
     }
-    variables.insert("HOME".to_string(), state.join("home").display().to_string());
-    variables.insert("TMPDIR".to_string(), state.join("tmp").display().to_string());
+    variables.insert("HOME".to_string(), vm_dir.join("home").display().to_string());
+    variables.insert("TMPDIR".to_string(), vm_dir.join("tmp").display().to_string());
     variables.insert(
         "XDG_CONFIG_HOME".to_string(),
-        state.join("home/.config").display().to_string(),
+        vm_dir.join("home/.config").display().to_string(),
     );
     variables.insert(
         "XDG_CACHE_HOME".to_string(),
-        state.join("home/.cache").display().to_string(),
+        vm_dir.join("home/.cache").display().to_string(),
     );
     variables.insert(
         "XDG_DATA_HOME".to_string(),
-        state.join("home/.local/share").display().to_string(),
+        vm_dir.join("home/.local/share").display().to_string(),
     );
     variables.insert(
         "SMOLVM_LIB_DIR".to_string(),

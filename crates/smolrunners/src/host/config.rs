@@ -31,8 +31,16 @@ impl Config {
         self.runtime.join("smolvm")
     }
 
-    pub fn smolvm_state(&self) -> PathBuf {
-        self.state.join("smolvm")
+    pub fn vms_dir(&self) -> PathBuf {
+        self.state.join("vms")
+    }
+
+    pub fn vm_dir(&self, machine: &str) -> PathBuf {
+        self.vms_dir().join(machine)
+    }
+
+    pub fn runner_log(&self, machine: &str) -> PathBuf {
+        self.state.join("logs").join(format!("{machine}.runner.log"))
     }
 
     pub fn control_file(&self, machine: &str) -> PathBuf {

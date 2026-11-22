@@ -36,6 +36,8 @@ pub struct Marker {
     #[serde(default)]
     pub storage_gib: Option<u32>,
     #[serde(default)]
+    pub storage_job: Option<String>,
+    #[serde(default)]
     pub cpu_max: String,
     #[serde(default)]
     pub memory_max: String,

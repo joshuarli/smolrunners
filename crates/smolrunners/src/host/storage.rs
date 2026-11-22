@@ -173,16 +173,16 @@ fn reflink_supported(state: &Path) -> bool {
     output.is_ok_and(|value| value.status.success())
 }
 
-fn smolvm_json(config: &Config, args: &[&str]) -> Result<Value, String> {
-    let smolvm = Smolvm::new(config);
-    let output = smolvm.invoke(args, None)?;
+fn smolvm_json(config: &Config, machine: &str, args: &[&str]) -> Result<Value, String> {
+    let smolvm = Smolvm::unconfined(config, machine);
+    let output = smolvm.invoke(args)?;
     let text = stdout(&output);
     serde_json::from_str(&text).map_err(|error| format!("parse smolvm {} json: {error}", args.join(" ")))
 }
 
 fn machine_data_dir(config: &Config, machine: &str) -> Result<PathBuf, String> {
-    let smolvm = Smolvm::new(config);
-    let output = smolvm.invoke(&["machine", "data-dir", "--name", machine], None)?;
+    let smolvm = Smolvm::unconfined(config, machine);
+    let output = smolvm.invoke(&["machine", "data-dir", "--name", machine])?;
     let path = stdout(&output);
     if path.is_empty() {
         return Err(format!("smolvm reported no data dir for {machine}"));
@@ -276,6 +276,14 @@ fn committed_charges(state: &Path, job: &str) -> Result<(u64, u64), String> {
     Ok((bytes, inodes))
 }
 
+pub fn release(config: &Config, job: &str) -> Result<(), String> {
+    match fs::remove_file(admission_path(&config.state, job)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("release storage admission {job}: {error}")),
+    }
+}
+
 pub fn admit(config: &Config, job: &str, bytes: u64, inodes: u64) -> Result<Admission, String> {
     let (block_size, free_blocks, free_inodes) = filesystem_stats(&config.state)?;
     let (charged_bytes, charged_inodes) = committed_charges(&config.state, job)?;
@@ -347,7 +355,8 @@ pub fn provision(
     if !admission.admitted {
         return Err(format!("job {job} was not admitted: {}", admission.reason.unwrap_or_default()));
     }
-    let smolvm = Smolvm::new(config);
+    super::agent::prepare_vm(config, machine, None)?;
+    let smolvm = Smolvm::unconfined(config, machine);
     let storage = storage_gb.to_string();
     let overlay = overlay_gb.to_string();
     smolvm.invoke(
@@ -367,9 +376,8 @@ pub fn provision(
             "-v",
             "/var/lib/containerd",
         ],
-        None,
     )?;
-    smolvm.invoke(&["machine", "start", "--name", machine], None)?;
+    smolvm.invoke(&["machine", "start", "--name", machine])?;
     record(config, job, machine)
 }
 
@@ -399,7 +407,7 @@ pub fn record(config: &Config, job: &str, machine: &str) -> Result<StorageRecord
         Allocation::Sparse => 0,
     };
     let _ = seed_apparent;
-    let status = smolvm_json(config, &["machine", "status", "--name", machine, "--json"])?;
+    let status = smolvm_json(config, machine, &["machine", "status", "--name", machine, "--json"])?;
     let storage_gb = status
         .get("storage_gb")
         .and_then(Value::as_u64)
@@ -460,6 +468,7 @@ pub fn verify(config: &Config, job: &str) -> Result<VerifyReport, String> {
     let (filesystem_uuid, inode_capacity) = ext4_properties(&raw)?;
     let status = smolvm_json(
         config,
+        &stored.machine,
         &["machine", "status", "--name", &stored.machine, "--json"],
     )?;
     let storage_gb = status

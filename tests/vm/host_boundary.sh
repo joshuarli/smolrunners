@@ -11,16 +11,24 @@ image='alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48
 fail() { printf 'host_boundary: %s\n' "$*" >&2; exit 1; }
 
 smolvm() {
+  vm=''
+  previous=''
+  for argument in "$@"; do
+    [ "$previous" = --name ] && vm=$argument
+    previous=$argument
+  done
+  [ -n "$vm" ] || { printf 'smolvm helper: --name is required
+' >&2; return 2; }
+  vmdir="$state/vms/$vm"
   env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    HOME="$state/home" TMPDIR="$state/tmp" \
-    XDG_CONFIG_HOME="$state/home/.config" XDG_CACHE_HOME="$state/home/.cache" \
+    HOME="$vmdir/home" TMPDIR="$vmdir/tmp" \
+    XDG_CONFIG_HOME="$vmdir/home/.config" XDG_CACHE_HOME="$vmdir/home/.cache" \
     SMOLVM_LIB_DIR="$runtime/lib" SMOLVM_AGENT_ROOTFS="$runtime/agent-rootfs" \
-    "$runtime/smolvm" --error-format json --state-dir "$state/smolvm" "$@"
+    "$runtime/smolvm" --error-format json --state-dir "$vmdir/smolvm" "$@"
 }
 
 leftovers() {
-  [ -d "$state/smolvm" ] || return 0
-  smolvm machine ls 2>/dev/null | awk '$1 ~ /^sr-/ {print $1}'
+  ls -A "$state/vms" 2>/dev/null || true
 }
 
 background_pids=''
