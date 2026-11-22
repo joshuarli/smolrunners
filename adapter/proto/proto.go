@@ -24,6 +24,9 @@ const (
 	KindSession        = "session"
 	KindVmDelete       = "vm_delete"
 	KindAck            = "ack"
+	KindJITRequest     = "jit_request"
+	KindRemoveRunner   = "remove_runner"
+	KindCommandResult  = "command_result"
 )
 
 type Frame struct {
@@ -47,10 +50,14 @@ type Frame struct {
 	RetryAfterMs     *int64   `json:"retry_after_ms,omitempty"`
 	Reason           string   `json:"reason,omitempty"`
 	Scenario         string   `json:"scenario,omitempty"`
+	CommandID        string   `json:"command_id,omitempty"`
+	OK               *bool    `json:"ok,omitempty"`
+	Error            string   `json:"error,omitempty"`
+	EncodedJITConfig string   `json:"encoded_jit_config,omitempty"`
 }
 
-func Bool(v bool) *bool       { return &v }
-func Int64(v int64) *int64    { return &v }
+func Bool(v bool) *bool    { return &v }
+func Int64(v int64) *int64 { return &v }
 
 func (f *Frame) CorrelationID() string {
 	if f.Kind == KindAck {

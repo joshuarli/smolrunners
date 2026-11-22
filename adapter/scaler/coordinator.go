@@ -13,43 +13,155 @@ type Coordinator interface {
 	Submit(ctx context.Context, frame proto.Frame) (proto.Frame, error)
 }
 
+type CommandHandler func(context.Context, proto.Frame) proto.Frame
+
 type FramedCoordinator struct {
-	in  io.Reader
-	out io.Writer
-	mu  sync.Mutex
+	in         io.Reader
+	out        io.Writer
+	writeMu    sync.Mutex
+	mu         sync.Mutex
+	pending    map[string]chan proto.Frame
+	readErr    error
+	done       chan struct{}
+	once       sync.Once
+	handler    CommandHandler
+	ctx        context.Context
+	commands   chan proto.Frame
+	workerDone chan struct{}
+	writeErr   error
+	stopped    bool
 }
 
 func NewFramedCoordinator(in io.Reader, out io.Writer) *FramedCoordinator {
-	return &FramedCoordinator{in: in, out: out}
+	return &FramedCoordinator{in: in, out: out, pending: make(map[string]chan proto.Frame), done: make(chan struct{}), ctx: context.Background()}
+}
+
+func (c *FramedCoordinator) Start(ctx context.Context, handler CommandHandler) {
+	c.once.Do(func() {
+		c.ctx = ctx
+		c.handler = handler
+		if handler != nil {
+			c.commands = make(chan proto.Frame, 64)
+			c.workerDone = make(chan struct{})
+			go c.handleCommands()
+		}
+		go c.read()
+	})
+}
+
+func (c *FramedCoordinator) Write(frame proto.Frame) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return proto.WriteFrame(c.out, &frame)
+}
+
+func (c *FramedCoordinator) read() {
+	defer close(c.done)
+	for {
+		frame, err := proto.ReadFrame(c.in)
+		if err != nil {
+			c.mu.Lock()
+			c.readErr = err
+			c.mu.Unlock()
+			return
+		}
+		if frame.IsAck() {
+			c.mu.Lock()
+			ch := c.pending[frame.EventID]
+			c.mu.Unlock()
+			if ch != nil {
+				select {
+				case ch <- *frame:
+				default:
+				}
+			}
+			continue
+		}
+		if c.handler == nil {
+			c.mu.Lock()
+			c.readErr = fmt.Errorf("coordinator: unexpected frame %q", frame.Kind)
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Lock()
+		if c.stopped {
+			c.mu.Unlock()
+			return
+		}
+		select {
+		case c.commands <- *frame:
+			c.mu.Unlock()
+		default:
+			c.readErr = fmt.Errorf("coordinator: command queue full")
+			c.mu.Unlock()
+			return
+		}
+	}
+}
+
+func (c *FramedCoordinator) handleCommands() {
+	defer close(c.workerDone)
+	for frame := range c.commands {
+		result := c.handler(c.ctx, frame)
+		if err := c.Write(result); err != nil {
+			c.mu.Lock()
+			c.writeErr = err
+			c.mu.Unlock()
+			return
+		}
+	}
+}
+
+func (c *FramedCoordinator) Stop() error {
+	c.mu.Lock()
+	c.stopped = true
+	if c.commands != nil {
+		close(c.commands)
+	}
+	c.mu.Unlock()
+	if c.workerDone != nil {
+		<-c.workerDone
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writeErr
 }
 
 func (c *FramedCoordinator) Submit(ctx context.Context, frame proto.Frame) (proto.Frame, error) {
+	ch := make(chan proto.Frame, 1)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if err := proto.WriteFrame(c.out, &frame); err != nil {
+	if _, exists := c.pending[frame.ID]; exists {
+		c.mu.Unlock()
+		return proto.Frame{}, fmt.Errorf("coordinator: duplicate event %q", frame.ID)
+	}
+	c.pending[frame.ID] = ch
+	c.mu.Unlock()
+	defer func() { c.mu.Lock(); delete(c.pending, frame.ID); c.mu.Unlock() }()
+	c.Start(ctx, nil)
+	if err := c.Write(frame); err != nil {
 		return proto.Frame{}, fmt.Errorf("coordinator: write event: %w", err)
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return proto.Frame{}, ctx.Err()
-		default:
-		}
-		ack, err := proto.ReadFrame(c.in)
-		if err != nil {
-			return proto.Frame{}, fmt.Errorf("coordinator: read ack: %w", err)
-		}
-		if !ack.IsAck() {
-			return proto.Frame{}, fmt.Errorf("coordinator: expected ack, got %q", ack.Kind)
-		}
-		if ack.CorrelationID() != frame.ID {
-			return proto.Frame{}, fmt.Errorf("coordinator: ack for %q, want %q", ack.CorrelationID(), frame.ID)
-		}
+	select {
+	case ack := <-ch:
 		if ack.Recorded == nil || !*ack.Recorded {
 			return proto.Frame{}, fmt.Errorf("coordinator: ack for %q was not recorded durably", frame.ID)
 		}
-		return *ack, nil
+		return ack, nil
+	case <-ctx.Done():
+		return proto.Frame{}, ctx.Err()
+	case <-c.done:
+		select {
+		case ack := <-ch:
+			if ack.Recorded == nil || !*ack.Recorded {
+				return proto.Frame{}, fmt.Errorf("coordinator: ack for %q was not recorded durably", frame.ID)
+			}
+			return ack, nil
+		default:
+		}
+		c.mu.Lock()
+		err := c.readErr
+		c.mu.Unlock()
+		return proto.Frame{}, fmt.Errorf("coordinator: read ack: %w", err)
 	}
 }
 

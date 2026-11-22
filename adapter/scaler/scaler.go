@@ -174,6 +174,7 @@ func (s *Scaler) Scale(ctx context.Context, msg *scaleset.RunnerScaleSetMessage)
 			RequestID:     proto.Int64(completed.RunnerRequestID),
 			JobID:         completed.JobID,
 			Result:        completed.Result,
+			RunnerName:    completed.RunnerName,
 		}
 		if _, err := s.coordinator.Submit(ctx, event); err != nil {
 			return fmt.Errorf("scale: submit completed: %w", err)

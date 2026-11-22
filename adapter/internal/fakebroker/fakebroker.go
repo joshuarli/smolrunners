@@ -37,12 +37,13 @@ func (s Statistics) toSDK() *scaleset.RunnerScaleSetStatistic {
 }
 
 type Session struct {
-	SessionID  string     `json:"session_id"`
-	OwnerName  string     `json:"owner_name"`
+	SessionID  string      `json:"session_id"`
+	OwnerName  string      `json:"owner_name"`
 	Statistics *Statistics `json:"statistics"`
 }
 
 type Job struct {
+	RunnerName         string   `json:"runner_name"`
 	RequestID          int64    `json:"request_id"`
 	JobID              string   `json:"job_id"`
 	Labels             []string `json:"labels"`
@@ -72,23 +73,24 @@ func (j Job) base() scaleset.JobMessageBase {
 }
 
 type Step struct {
-	Kind       string       `json:"kind"`
-	MessageID  int          `json:"message_id"`
-	Statistics *Statistics  `json:"statistics"`
-	Available  []Job        `json:"job_available"`
-	Assigned   []Job        `json:"job_assigned"`
-	Started    []Job        `json:"job_started"`
-	Completed  []Job        `json:"job_completed"`
-	Error      string       `json:"error"`
+	AfterMs    int         `json:"after_ms"`
+	Kind       string      `json:"kind"`
+	MessageID  int         `json:"message_id"`
+	Statistics *Statistics `json:"statistics"`
+	Available  []Job       `json:"job_available"`
+	Assigned   []Job       `json:"job_assigned"`
+	Started    []Job       `json:"job_started"`
+	Completed  []Job       `json:"job_completed"`
+	Error      string      `json:"error"`
 }
 
 type Scenario struct {
-	Name                string          `json:"name"`
-	Session             Session         `json:"session"`
-	MaxMessagesPerBatch int             `json:"max_messages_per_batch"`
-	AcquireResults      [][]int64       `json:"acquire_results"`
-	Steps               []Step          `json:"steps"`
-	AfterEnd            string          `json:"after_end"`
+	Name                string    `json:"name"`
+	Session             Session   `json:"session"`
+	MaxMessagesPerBatch int       `json:"max_messages_per_batch"`
+	AcquireResults      [][]int64 `json:"acquire_results"`
+	Steps               []Step    `json:"steps"`
+	AfterEnd            string    `json:"after_end"`
 }
 
 func LoadScenario(path string) (*Scenario, error) {
@@ -119,6 +121,10 @@ type Client struct {
 	stepIndex    int
 	messages     []*scaleset.RunnerScaleSetMessage
 	errors       []error
+	delays       []time.Duration
+	jitName      string
+	runnerID     int64
+	removed      []int64
 	acquireIndex int
 	deleted      []int
 	acquireCalls [][]int64
@@ -132,6 +138,7 @@ func New(scenario *Scenario) *Client {
 
 func (c *Client) expandSteps() {
 	for _, step := range c.scenario.Steps {
+		before := len(c.messages)
 		switch step.Kind {
 		case "error":
 			c.errors = append(c.errors, errors.New(step.Error))
@@ -145,6 +152,13 @@ func (c *Client) expandSteps() {
 			for batch := 0; batch < batches; batch++ {
 				c.errors = append(c.errors, nil)
 				c.messages = append(c.messages, buildMessageWithLimit(step, batch, limit))
+			}
+		}
+		for i := before; i < len(c.messages); i++ {
+			if i == before {
+				c.delays = append(c.delays, time.Duration(step.AfterMs)*time.Millisecond)
+			} else {
+				c.delays = append(c.delays, 0)
 			}
 		}
 	}
@@ -195,10 +209,10 @@ func buildMessageWithLimit(step Step, batch, limit int) *scaleset.RunnerScaleSet
 		message.JobAssignedMessages = append(message.JobAssignedMessages, &scaleset.JobAssigned{JobMessageBase: job.base()})
 	}
 	for _, job := range slice(step.Started) {
-		message.JobStartedMessages = append(message.JobStartedMessages, &scaleset.JobStarted{JobMessageBase: job.base()})
+		message.JobStartedMessages = append(message.JobStartedMessages, &scaleset.JobStarted{JobMessageBase: job.base(), RunnerName: job.RunnerName})
 	}
 	for _, job := range slice(step.Completed) {
-		message.JobCompletedMessages = append(message.JobCompletedMessages, &scaleset.JobCompleted{JobMessageBase: job.base()})
+		message.JobCompletedMessages = append(message.JobCompletedMessages, &scaleset.JobCompleted{JobMessageBase: job.base(), RunnerName: job.RunnerName})
 	}
 	return message
 }
@@ -228,20 +242,58 @@ func (c *Client) Session() scaleset.RunnerScaleSetSession {
 
 func (c *Client) GetMessage(ctx context.Context, lastMessageID, maxCapacity int) (*scaleset.RunnerScaleSetMessage, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.stepIndex < len(c.messages) {
-		index := c.stepIndex
-		c.stepIndex++
-		if err := c.errors[index]; err != nil {
-			return nil, err
+	if c.stepIndex >= len(c.messages) {
+		c.mu.Unlock()
+		if c.scenario.AfterEnd == "error" {
+			return nil, errors.New("fakebroker: session refresh failed")
 		}
-		return c.messages[index], nil
+		return nil, ErrScenarioEnd
 	}
-	if c.scenario.AfterEnd == "error" {
-		return nil, errors.New("fakebroker: session refresh failed")
+	index := c.stepIndex
+	c.stepIndex++
+	delay := c.delays[index]
+	c.mu.Unlock()
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	return nil, ErrScenarioEnd
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.errors[index] != nil {
+		return nil, c.errors[index]
+	}
+	message := c.messages[index]
+	if message != nil {
+		for _, job := range message.JobStartedMessages {
+			if job.RunnerName == "$jit" {
+				job.RunnerName = c.jitName
+			}
+		}
+		for _, job := range message.JobCompletedMessages {
+			if job.RunnerName == "$jit" {
+				job.RunnerName = c.jitName
+			}
+		}
+	}
+	return message, nil
+}
+
+func (c *Client) JIT(name string) int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runnerID++
+	c.jitName = name
+	return c.runnerID
+}
+func (c *Client) Remove(id int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.removed = append(c.removed, id)
 }
 
 func (c *Client) DeleteMessage(ctx context.Context, messageID int) error {
