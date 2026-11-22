@@ -29,6 +29,12 @@ pub struct Marker {
     pub net_allow: String,
     #[serde(default = "default_net_mode")]
     pub net_mode: String,
+    #[serde(default)]
+    pub reservation_id: Option<u64>,
+    #[serde(default)]
+    pub execution_id: Option<i64>,
+    #[serde(default)]
+    pub storage_gib: Option<u32>,
 }
 
 fn default_net_allow() -> String {

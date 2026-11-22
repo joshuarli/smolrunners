@@ -190,6 +190,8 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
             let mut memory = 2048u32;
             let mut storage = 20u32;
             let mut overlay = 10u32;
+            let mut reservation_id = None;
+            let mut execution_id = None;
             let mut index = 0usize;
             while index < args.len() {
                 match args[index].as_str() {
@@ -215,6 +217,20 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
                             .parse()
                             .map_err(|_| "bad --overlay")?
                     }
+                    "--reservation-id" => {
+                        reservation_id = Some(
+                            subcommand_value(args, &mut index, "--reservation-id")?
+                                .parse()
+                                .map_err(|_| "bad --reservation-id")?,
+                        )
+                    }
+                    "--execution-id" => {
+                        execution_id = Some(
+                            subcommand_value(args, &mut index, "--execution-id")?
+                                .parse()
+                                .map_err(|_| "bad --execution-id")?,
+                        )
+                    }
                     other => return Err(format!("provision: unknown option {other}")),
                 }
                 index += 1;
@@ -227,6 +243,8 @@ fn dispatch(config: &Config, command: &str, args: &[String]) -> Result<(), Strin
                 memory,
                 storage,
                 overlay,
+                reservation_id,
+                execution_id,
             )
         }
         other => Err(format!("unknown subcommand {other}")),

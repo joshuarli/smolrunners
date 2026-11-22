@@ -169,6 +169,17 @@ start_coordinator
 wait_for 'RESERVE job=job-connected-a ' 120 || fail 'no durable reservation for job a'
 wait_for 'ACQUIRE job=job-connected-a ' 120 || fail 'no persisted acquisition for job a'
 wait_for 'LAUNCH job=job-connected-a machine=sr-' 150 || fail 'coordinator did not launch the owned VM'
+guest "python3 - <<'PY'
+import glob, json, sys
+markers = [json.load(open(path)) for path in glob.glob('$gstate/host/markers/*.json')]
+assert markers, 'no host ownership markers'
+marker = markers[0]
+assert marker.get('reservation_id'), marker
+assert marker.get('execution_id'), marker
+assert marker.get('storage_gib'), marker
+print('connected_job: marker carries reservation=%s execution=%s storage=%sGiB' % (
+    marker['reservation_id'], marker['execution_id'], marker['storage_gib']))
+PY" || fail 'the host marker does not carry the execution identity'
 wait_for 'TELEMETRY attempt=' 60 || fail 'no live telemetry during execution'
 first=$(samples)
 sleep 4

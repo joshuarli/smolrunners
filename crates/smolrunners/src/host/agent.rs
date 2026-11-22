@@ -207,6 +207,8 @@ pub fn provision(
     memory: u32,
     storage: u32,
     overlay: u32,
+    reservation_id: Option<u64>,
+    execution_id: Option<i64>,
 ) -> Result<(), String> {
     prepare_state(config)?;
     for machine in reap(config)? {
@@ -229,6 +231,9 @@ pub fn provision(
         vmm_pid: None,
         net_allow: config.net_allow.clone(),
         net_mode: net_mode.clone(),
+        reservation_id,
+        execution_id,
+        storage_gib: Some(storage),
     };
 
     marker::write(&config.state, &marker)
@@ -374,6 +379,9 @@ mod tests {
             vmm_pid: None,
             net_allow: "10.0.0.0/8".to_owned(),
             net_mode: "private".to_owned(),
+            reservation_id: None,
+            execution_id: None,
+            storage_gib: None,
         }
     }
 

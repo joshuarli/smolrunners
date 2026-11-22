@@ -236,7 +236,13 @@ fn read_log(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
 }
 
-fn detached_host(config: &Config, role: &str, log: &Path) -> Result<(), String> {
+fn detached_host(
+    config: &Config,
+    role: &str,
+    log: &Path,
+    reservation: Option<u64>,
+    execution: Option<i64>,
+) -> Result<(), String> {
     let host_state = if config.guest_exec.is_some() {
         config.guest_state_dir.join("host")
     } else {
@@ -258,7 +264,7 @@ fn detached_host(config: &Config, role: &str, log: &Path) -> Result<(), String> 
         config.agent.as_path()
     };
     let memory_mib = (config.memory_gib * 1024).to_string();
-    let arguments = vec![
+    let mut arguments = vec![
         "host".to_owned(),
         "--state-dir".to_owned(),
         host_state.display().to_string(),
@@ -280,6 +286,14 @@ fn detached_host(config: &Config, role: &str, log: &Path) -> Result<(), String> 
         "--overlay".to_owned(),
         "10".to_owned(),
     ];
+    if let Some(value) = reservation {
+        arguments.push("--reservation-id".to_owned());
+        arguments.push(value.to_string());
+    }
+    if let Some(value) = execution {
+        arguments.push("--execution-id".to_owned());
+        arguments.push(value.to_string());
+    }
     let inner = super::guest_inner(program, &arguments);
     detached_command(config, &inner, log)
         .spawn()
@@ -292,7 +306,13 @@ fn launch_vm(config: &Config, job: &JobRuntime) -> Result<String, String> {
     let log = config.state_dir.join(format!("host-{role}.log"));
     let _ = fs::remove_file(&log);
     let _ = File::create(&log).map_err(|error| format!("host log: {error}"))?;
-    detached_host(config, &role, &log)?;
+    detached_host(
+        config,
+        &role,
+        &log,
+        job.reservation_id,
+        Some(job.execution_attempt_id),
+    )?;
     let mut machine = None;
     for _ in 0..600 {
         let text = read_log(&log);

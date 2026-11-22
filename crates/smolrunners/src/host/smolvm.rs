@@ -23,10 +23,6 @@ impl<'a> Smolvm<'a> {
         Self { config }
     }
 
-    fn command(&self, args: &[String], cgroup: Option<&str>) -> Command {
-        self.command_as(args, cgroup, self.config.uid)
-    }
-
     fn command_as(&self, args: &[String], cgroup: Option<&str>, uid: u32) -> Command {
         let mut command = match cgroup {
             Some(cgroup) => {
@@ -67,13 +63,6 @@ impl<'a> Smolvm<'a> {
         command
     }
 
-    pub fn raw(&self, args: &[&str], cgroup: Option<&str>) -> Result<Output, String> {
-        let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
-        self.command(&owned, cgroup)
-            .output()
-            .map_err(|error| format!("spawn smolvm: {error}"))
-    }
-
     pub fn invoke(&self, args: &[&str], cgroup: Option<&str>) -> Result<Output, String> {
         self.invoke_as(args, cgroup, self.config.uid)
     }
@@ -92,10 +81,6 @@ impl<'a> Smolvm<'a> {
         }
         let error = parse_failure(&output);
         Err(format!("{} failed: {} ({})", args.join(" "), error.message, error.code))
-    }
-
-    pub fn start_tracked(&self, args: &[&str], cgroup: Option<&str>) -> Result<Running, String> {
-        self.start_tracked_as(args, cgroup, self.config.uid)
     }
 
     pub fn start_tracked_as(
