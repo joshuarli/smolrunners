@@ -6,7 +6,8 @@ runtime=/opt/runtime
 state=/work/tmp/telemetry-long-state
 machine=sr-telemetry-long
 seconds=${1:-120}
-cap=$((seconds * 2 + 10000))
+spool_lines_per_second=60
+cap=$((seconds * spool_lines_per_second + 20000))
 
 fail() { printf 'telemetry_long: %s\n' "$*" >&2; exit 1; }
 note() { printf 'telemetry_long: %s\n' "$*"; }
