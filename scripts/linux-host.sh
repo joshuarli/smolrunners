@@ -69,8 +69,12 @@ up() {
 
 sync() {
   archive="$state/smolrunners-tree.tar"
-  ( cd "$repo" && git ls-files -z --cached --others --exclude-standard --deduplicate |
-      tar --no-xattrs --null -T - -cf - ) > "$archive"
+  ( cd "$repo" && {
+      git ls-files -z --cached --others --exclude-standard --deduplicate
+      for generated in tests/vm/bin tests/cli/bin crates/smolrunners/src/host/cache/smolrunners-cache; do
+        [ -e "$generated" ] && printf '%s\0' "$generated"
+      done
+    } | tar --no-xattrs --null -T - -cf - ) > "$archive"
   native machine cp "$archive" "$machine:/work/tmp/smolrunners-tree.tar"
   guest -- sh -eu -c 'mkdir -p /work/smolrunners/.work/tmp && tar -C /work/smolrunners -xf /work/tmp/smolrunners-tree.tar && rm -f /work/tmp/smolrunners-tree.tar'
 }
