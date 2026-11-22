@@ -37,9 +37,9 @@ for name in $inputs; do
   rm -rf "$unpack"
   mkdir -p "$unpack"
   tar -xzf "$path" -C "$unpack" || fail "cannot unpack $name"
-  ( cd "$unpack" && find . -mindepth 1 -maxdepth 1 ! -name '.SIGN.*' ! -name '.PKGINFO' \
-      ! -name '.pre-*' ! -name '.post-*' -exec cp -a {} "$rootfs/" \; ) \
-    || fail "cannot install $name"
+  ( cd "$unpack" && find . -mindepth 1 -maxdepth 1 \
+      \( -name '.SIGN.*' -o -name '.PKGINFO' -o -name '.pre-*' -o -name '.post-*' \) -exec rm -rf {} + )
+  cp -a "$unpack/." "$rootfs/" || fail "cannot install $name"
 done
 
 [ -x "$rootfs/usr/bin/node" ] || fail 'musl node was not installed'
