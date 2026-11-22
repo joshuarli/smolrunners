@@ -45,5 +45,15 @@ expect compose "$(pin compose)" \
 /opt/smolrunners/bin/smolrunners-collector --help | grep -q 'usage: smolrunners-collector' \
   || fail 'collector does not run on Alpine'
 
+[ -x /usr/bin/node ] || fail 'musl node is missing'
+node_version=$(/usr/bin/node --version 2>/dev/null) || fail 'musl node does not run'
+case "$node_version" in
+  v24.*) ;;
+  *) fail "unexpected musl node version: $node_version" ;;
+esac
+ldd /usr/bin/node 2>/dev/null | grep -q 'ld-musl' || fail 'node is not musl linked'
+[ -e /usr/lib/libstdc++.so.6 ] || fail 'libstdc++ runtime is missing'
+printf 'verify: musl-node=%s ok\n' "$node_version"
+
 printf 'verify: alpine-release=%s\n' "$release"
 printf 'verify: ok\n'
