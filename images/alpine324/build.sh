@@ -105,6 +105,9 @@ assert_version() {
 printf 'image build: pulling base rootfs\n'
 pull_base
 
+printf 'image build: installing the pinned musl C++/ICU and Node runtime\n'
+sh "$recipe_dir/install-runtime.sh" "$rootfs" "$cache"
+
 printf 'image build: fetching pinned inputs\n'
 docker_tgz=$(fetch_input docker-static-aarch64)
 buildx_bin=$(fetch_input buildx-linux-arm64)
