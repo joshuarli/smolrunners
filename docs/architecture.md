@@ -22,6 +22,15 @@ images, measurements, history and operator access.
 The nested development host is one `sr-dev` machine under smolvm on the Mac. Multi-host work uses
 `sr-coord`, `sr-host-a` and `sr-host-b` on one `sr-net` network, within 12 vCPUs and 24 GiB.
 
+## Ownership record
+
+Each host job writes one marker under the host state directory before creating a VM. It carries
+the machine and cgroup names, owner PID and process start time, allocated VM UID, image, network
+policy, reservation and execution IDs, storage budget, and the effective cpu/memory/pids limits.
+The boundary report is evaluated from that marker, so a later change to host configuration cannot
+rewrite what a running execution was checked against. The reaper uses the recorded start time to
+avoid treating a reused PID as the original owner.
+
 ## Current integration boundary
 
 The API's control records live in `state.json`, while sample history lives in SQLite. The core
