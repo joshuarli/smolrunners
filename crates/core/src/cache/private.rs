@@ -34,7 +34,8 @@ impl PrivateView {
             }
             let digest = Digest::from_hex(&entry.digest)?;
             let blob = view.blobs.blob_path(&digest);
-            symlink(&blob, &target)?;
+            fs::copy(&blob, &target)?;
+            make_writable(&target)?;
         }
         Ok(view)
     }
@@ -87,13 +88,14 @@ impl PrivateView {
 }
 
 #[cfg(unix)]
-fn symlink(source: &Path, target: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(source, target).map_err(CacheError::Io)
+fn make_writable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o644)).map_err(CacheError::Io)
 }
 
 #[cfg(not(unix))]
-fn symlink(source: &Path, target: &Path) -> Result<()> {
-    fs::copy(source, target).map(|_| ()).map_err(CacheError::Io)
+fn make_writable(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -129,14 +131,14 @@ mod tests {
         let b = PrivateView::create(&views, "job-b", &manifest, generations.blobs())
             .expect("view b");
 
-        assert!(a.is_shared_link("tool").expect("a starts shared"));
-        assert!(b.is_shared_link("tool").expect("b starts shared"));
+        assert!(!a.is_shared_link("tool").expect("a is an independent copy"));
+        assert!(!b.is_shared_link("tool").expect("b is an independent copy"));
         a.write("tool", b"from-a").expect("a writes");
         a.write("private", b"only-a").expect("a adds private file");
         assert!(!a.is_shared_link("tool").expect("a copy-on-write"));
         assert_eq!(a.read("tool").expect("a read"), b"from-a");
         assert_eq!(b.read("tool").expect("b read"), b"baseline");
-        assert!(b.is_shared_link("tool").expect("b still shared"));
+        assert!(!b.is_shared_link("tool").expect("b is still independent"));
         assert!(b.read("private").is_err());
         assert_eq!(
             generations.blobs().get(&Digest::from_hex(&manifest.files[0].digest).unwrap()).expect("blob"),
@@ -145,6 +147,30 @@ mod tests {
 
         let escaping = PrivateView::create(&views, "job-c", &manifest, generations.blobs()).expect("view c");
         assert!(escaping.read("../job-a/tool").is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_ordinary_filesystem_write_cannot_modify_the_shared_blob() {
+        let root = scratch("private_ordinary_write");
+        let blobs = ContentStore::new(root.join("content"));
+        let digest = blobs.put(b"baseline").expect("blob");
+        let manifest = Manifest {
+            schema_version: 1,
+            files: vec![crate::cache::generation::ManifestEntry {
+                path: "tool".to_owned(),
+                digest: digest.hex(),
+                bytes: 8,
+            }],
+        };
+        let views = root.join("views");
+        let first = PrivateView::create(&views, "job-a", &manifest, &blobs).expect("view a");
+        let second = PrivateView::create(&views, "job-b", &manifest, &blobs).expect("view b");
+
+        fs::write(first.root().join("tool"), b"dirty-by-a").expect("ordinary write");
+        assert_eq!(first.read("tool").expect("a read"), b"dirty-by-a");
+        assert_eq!(second.read("tool").expect("b read"), b"baseline");
+        assert_eq!(blobs.get(&digest).expect("blob"), b"baseline");
         let _ = fs::remove_dir_all(&root);
     }
 

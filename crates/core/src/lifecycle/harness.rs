@@ -866,7 +866,7 @@ mod faults {
             store.blobs(),
         )
         .expect("first view");
-        assert!(first_vm.is_shared_link("tool").expect("first shared"));
+        assert!(!first_vm.is_shared_link("tool").expect("first is an independent copy"));
         first_vm.write("tool", b"dirty").expect("private write");
         let second_vm = PrivateView::create(
             &root.join("views"),
