@@ -58,7 +58,7 @@ fn remove_cgroup(path: &str) {
 
 fn teardown(config: &Config, marker: &Marker) -> Result<(), String> {
     let smolvm = Smolvm::new(config);
-    match smolvm.raw(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup)) {
+    match smolvm.raw_as(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup), marker.uid) {
         Ok(output) if output.status.success() => {}
         Ok(output) => {
             let error = smolvm::parse_failure(&output);
@@ -71,9 +71,10 @@ fn teardown(config: &Config, marker: &Marker) -> Result<(), String> {
         }
         Err(error) => return Err(error),
     }
-    match smolvm.raw(
+    match smolvm.raw_as(
         &["machine", "delete", "--name", &marker.machine, "-f"],
         Some(&marker.cgroup),
+        marker.uid,
     ) {
         Ok(output) if output.status.success() => {}
         Ok(output) => {
@@ -134,7 +135,7 @@ fn wait_for_vmm(cgroup: &str) -> Option<u32> {
 
 fn boundary_input(config: &Config, marker: &Marker) -> BoundaryInput {
     BoundaryInput {
-        uid: config.uid,
+        uid: marker.uid,
         cpu_max: config.cpu_max.clone(),
         memory_max: config.memory_max.clone(),
         pids_max: config.pids_max.clone(),
@@ -172,6 +173,19 @@ fn wait_for_stop(config: &Config, machine: &str) {
     let _ = fs::remove_file(&control);
 }
 
+fn allocate_uid(state: &Path) -> Result<u32, String> {
+    const FIRST: u32 = 61_000;
+    const COUNT: u32 = 1_000;
+    let used: std::collections::BTreeSet<u32> = marker::scan(state)?
+        .into_iter()
+        .map(|(_, marker)| marker.uid)
+        .collect();
+    (0..COUNT)
+        .map(|offset| FIRST + offset)
+        .find(|uid| !used.contains(uid))
+        .ok_or_else(|| "no per-job VM uid is available".to_owned())
+}
+
 pub fn provision(
     config: &Config,
     role: &str,
@@ -196,7 +210,7 @@ pub fn provision(
         incarnation: id,
         phase: Phase::Creating,
         image: image.to_string(),
-        uid: config.uid,
+        uid: allocate_uid(&config.state)?,
         cgroup,
         vmm_pid: None,
         net_allow: config.net_allow.clone(),
@@ -232,7 +246,7 @@ pub fn provision(
         &overlay_arg,
     ]);
     let smolvm = Smolvm::new(config);
-    smolvm.invoke(&create_args, Some(&marker.cgroup))?;
+    smolvm.invoke_as(&create_args, Some(&marker.cgroup), marker.uid)?;
 
     marker.phase = Phase::Created;
     marker::write(&config.state, &marker)
@@ -245,12 +259,12 @@ pub fn provision(
     marker.phase = Phase::Starting;
     marker::write(&config.state, &marker)
         .map_err(|error| format!("write marker: {error}"))?;
-    let running = smolvm.start_tracked(&["machine", "start", "--name", &marker.machine], Some(&marker.cgroup))?;
+    let running = smolvm.start_tracked_as(&["machine", "start", "--name", &marker.machine], Some(&marker.cgroup), marker.uid)?;
 
     let Some(vmm_pid) = wait_for_vmm(&marker.cgroup) else {
         let report = record_boundary(config, &marker)?;
         println!("INELIGIBLE {}", ineligible(&report));
-        let _ = smolvm.invoke(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup));
+        let _ = smolvm.invoke_as(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup), marker.uid);
         drop(running);
         teardown(config, &marker)?;
         return Err("vmm did not become observable before readiness".to_string());
@@ -262,7 +276,7 @@ pub fn provision(
     let report = record_boundary(config, &marker)?;
     if !report.eligible {
         println!("INELIGIBLE {}", ineligible(&report));
-        let _ = smolvm.invoke(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup));
+        let _ = smolvm.invoke_as(&["machine", "stop", "--name", &marker.machine], Some(&marker.cgroup), marker.uid);
         drop(running);
         teardown(config, &marker)?;
         return Err("host failed the boundary checks before readiness".to_string());
@@ -301,4 +315,63 @@ pub fn list(config: &Config) -> Result<(), String> {
         println!("MACHINE {machine}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static NEXT_STATE: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let sequence = NEXT_STATE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "smolrunners-uid-{}-{sequence}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp state dir");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn marker(machine: &str, uid: u32) -> Marker {
+        Marker {
+            machine: machine.to_owned(),
+            owner_pid: std::process::id(),
+            incarnation: "i".to_owned(),
+            phase: Phase::Creating,
+            image: "image".to_owned(),
+            uid,
+            cgroup: format!("/sys/fs/cgroup/{machine}"),
+            vmm_pid: None,
+            net_allow: "10.0.0.0/8".to_owned(),
+            net_mode: "private".to_owned(),
+        }
+    }
+
+    #[test]
+    fn each_job_gets_a_distinct_uid() {
+        let dir = TestDir::new();
+        let first = allocate_uid(&dir.0).expect("first uid");
+        marker::write(&dir.0, &marker("machine-a", first)).expect("write marker a");
+        let second = allocate_uid(&dir.0).expect("second uid");
+        assert_ne!(first, second);
+        marker::write(&dir.0, &marker("machine-b", second)).expect("write marker b");
+        let third = allocate_uid(&dir.0).expect("third uid");
+        assert_ne!(third, first);
+        assert_ne!(third, second);
+    }
 }

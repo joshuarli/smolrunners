@@ -24,14 +24,18 @@ impl<'a> Smolvm<'a> {
     }
 
     fn command(&self, args: &[String], cgroup: Option<&str>) -> Command {
+        self.command_as(args, cgroup, self.config.uid)
+    }
+
+    fn command_as(&self, args: &[String], cgroup: Option<&str>, uid: u32) -> Command {
         let mut command = match cgroup {
             Some(cgroup) => {
                 let mut launcher = Command::new(&self.config.launcher);
                 launcher
                     .arg("--uid")
-                    .arg(self.config.uid.to_string())
+                    .arg(uid.to_string())
                     .arg("--gid")
-                    .arg(self.config.uid.to_string())
+                    .arg(uid.to_string())
                     .arg("--cgroup")
                     .arg(cgroup)
                     .arg("--cpu-max")
@@ -71,7 +75,18 @@ impl<'a> Smolvm<'a> {
     }
 
     pub fn invoke(&self, args: &[&str], cgroup: Option<&str>) -> Result<Output, String> {
-        let output = self.raw(args, cgroup)?;
+        self.invoke_as(args, cgroup, self.config.uid)
+    }
+
+    pub fn raw_as(&self, args: &[&str], cgroup: Option<&str>, uid: u32) -> Result<Output, String> {
+        let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
+        self.command_as(&owned, cgroup, uid)
+            .output()
+            .map_err(|error| format!("spawn smolvm: {error}"))
+    }
+
+    pub fn invoke_as(&self, args: &[&str], cgroup: Option<&str>, uid: u32) -> Result<Output, String> {
+        let output = self.raw_as(args, cgroup, uid)?;
         if output.status.success() {
             return Ok(output);
         }
@@ -80,9 +95,18 @@ impl<'a> Smolvm<'a> {
     }
 
     pub fn start_tracked(&self, args: &[&str], cgroup: Option<&str>) -> Result<Running, String> {
+        self.start_tracked_as(args, cgroup, self.config.uid)
+    }
+
+    pub fn start_tracked_as(
+        &self,
+        args: &[&str],
+        cgroup: Option<&str>,
+        uid: u32,
+    ) -> Result<Running, String> {
         let owned: Vec<String> = args.iter().map(|value| (*value).to_string()).collect();
         let child = self
-            .command(&owned, cgroup)
+            .command_as(&owned, cgroup, uid)
             .spawn()
             .map_err(|error| format!("spawn smolvm: {error}"))?;
         Ok(Running { child })

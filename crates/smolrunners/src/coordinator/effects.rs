@@ -266,8 +266,6 @@ fn detached_host(config: &Config, role: &str, log: &Path) -> Result<(), String> 
         runtime,
         "--launcher".to_owned(),
         launcher,
-        "--uid".to_owned(),
-        "60000".to_owned(),
         "provision".to_owned(),
         "--name".to_owned(),
         role.to_owned(),
