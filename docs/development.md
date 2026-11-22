@@ -32,6 +32,12 @@ make test-vm T=smoke  # sync the tree into sr-dev and run tests/vm/smoke.sh
 Scratch and downloaded inputs live under `.work/`, which is ignored through `.git/info/exclude`.
 `TMPDIR` for all repository commands is `.work/tmp`.
 
+Guest binaries are build artifacts, not source. They are ignored by git; `make test-vm` runs
+`scripts/build-vm-binaries.sh` to cross-compile them from the current checkout into
+`tests/vm/bin/`, `tests/cli/bin/` and `crates/smolrunners/src/host/cache/` before every VM gate.
+A fresh checkout therefore has no binary fixtures until a VM target (or the script directly) is
+run. Do not commit those files: they dominated the repository size and made pushes impractical.
+
 ## Adding an input
 
 Add one entry to `sources.lock.json` with `name`, `version`, `url`, `sha256`, `size`, `target`,
