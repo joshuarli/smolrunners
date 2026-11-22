@@ -67,15 +67,15 @@ func TestFakeCommandDuringEvent(t *testing.T) {
 	if err = json.Unmarshal(decoded, &config); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"runner", "credentials", "credentials_rsaparams"} {
+	for _, key := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
 		b, e := base64.StdEncoding.DecodeString(config[key])
 		if e != nil || !json.Valid(b) {
 			t.Fatalf("invalid %s", key)
 		}
 	}
-	runner, _ := base64.StdEncoding.DecodeString(config["runner"])
-	if !strings.Contains(string(runner), "http://127.0.0.1:9") {
-		t.Fatal("wrong server")
+	runner, _ := base64.StdEncoding.DecodeString(config[".runner"])
+	if !strings.Contains(string(runner), "http://127.0.0.1:9") || !strings.Contains(string(runner), `"agentName":"runner-1"`) {
+		t.Fatalf("wrong runner settings: %s", runner)
 	}
 	send(t, iw, proto.AckFor(event.ID, "accept"))
 	names := map[string]string{}

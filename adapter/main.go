@@ -23,9 +23,26 @@ func scenariosDir() string {
 	}
 	return filepath.Join("testdata", "scenarios")
 }
-func fakeJIT() string {
+func fakeJIT(name string, id int64) string {
 	encode := func(v any) string { b, _ := json.Marshal(v); return base64.StdEncoding.EncodeToString(b) }
-	return encode(map[string]string{"runner": encode(map[string]string{"serverUrl": "http://127.0.0.1:9"}), "credentials": encode(map[string]string{}), "credentials_rsaparams": encode(map[string]string{})})
+	runner := map[string]any{
+		"agentId":    id,
+		"agentName":  name,
+		"poolId":     1,
+		"serverUrl":  "http://127.0.0.1:9",
+		"gitHubUrl":  "http://127.0.0.1:9/smolrunners/fake",
+		"workFolder": "_work",
+		"ephemeral":  true,
+	}
+	credentials := map[string]any{
+		"scheme": "OAuth",
+		"data":   map[string]string{"clientId": "fake", "authorizationUrl": "http://127.0.0.1:9/token"},
+	}
+	return encode(map[string]string{
+		".runner":                encode(runner),
+		".credentials":           encode(credentials),
+		".credentials_rsaparams": encode(map[string]string{}),
+	})
 }
 func commandHandler(broker *fakebroker.Client, client *scaleset.Client, setID int) scaler.CommandHandler {
 	return func(ctx context.Context, command proto.Frame) proto.Frame {
@@ -40,7 +57,7 @@ func commandHandler(broker *fakebroker.Client, client *scaleset.Client, setID in
 			if broker != nil {
 				id := broker.JIT(command.RunnerName)
 				result.RunnerID = proto.Int64(id)
-				result.EncodedJITConfig = fakeJIT()
+				result.EncodedJITConfig = fakeJIT(command.RunnerName, id)
 			} else {
 				var jit *scaleset.RunnerScaleSetJitRunnerConfig
 				jit, err = client.GenerateJitRunnerConfig(ctx, &scaleset.RunnerScaleSetJitRunnerSetting{Name: command.RunnerName, WorkFolder: "_work"}, setID)
