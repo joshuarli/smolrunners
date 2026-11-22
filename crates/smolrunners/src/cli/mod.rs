@@ -39,7 +39,7 @@ fn usage() -> Output {
          profiles list, apply, inspect, recommend\n\
          images build, qualify, promote\n\
          caches list, inspect, prune\n\
-         jobs list, inspect, top, metrics, logs, explain, report, compare, debug\n",
+         jobs list, inspect, top, metrics, logs, explain, report, compare, debug, cancel\n",
     )
 }
 
@@ -70,31 +70,87 @@ fn follow_metrics(
     json: bool,
     format: Option<&str>,
 ) -> Result<Output, String> {
-    follow_metrics_with(transport, id, json, format, Duration::from_secs(1), 1800)
+    let stdout = std::io::stdout();
+    let mut locked = stdout.lock();
+    follow_metrics_to(transport, id, json, format, Duration::from_secs(1), &mut locked)
 }
 
-fn follow_metrics_with(
+fn latest(series: &Value, metric: &str) -> Option<f64> {
+    series
+        .as_array()?
+        .iter()
+        .filter(|row| row["metric"].as_str() == Some(metric))
+        .max_by_key(|row| row["sequence"].as_i64().unwrap_or(0))
+        .and_then(|row| row["value"].as_f64())
+}
+
+fn follow_line(job: &Value, metrics: &Value) -> String {
+    let state = job["state"].as_str().unwrap_or("unknown");
+    let samples = metrics["samples"].as_u64().unwrap_or(0);
+    let cpu = latest(&metrics["series"], "cpu.busy_cores")
+        .map(|value| format!("{value:.2}"))
+        .unwrap_or_else(|| "-".to_owned());
+    let memory = latest(&metrics["series"], "mem.used_bytes")
+        .map(|value| format!("{:.1}", value / (1024.0 * 1024.0)))
+        .unwrap_or_else(|| "-".to_owned());
+    let limits = &job["limits"];
+    let limit = match (limits["guest_vcpu"].as_u64(), limits["guest_memory_gib"].as_u64()) {
+        (Some(vcpu), Some(gib)) => format!(" limit={vcpu}c/{gib}GiB"),
+        _ => String::new(),
+    };
+    let result = job["result"].as_str().map(|value| format!(" result={value}")).unwrap_or_default();
+    format!("state={state} samples={samples} cpu_cores={cpu} mem_mib={memory}{limit}{result}")
+}
+
+/// Streams one update per poll and returns once the job reaches a terminal state.
+pub fn follow_metrics_to(
     transport: &dyn Transport,
     id: &str,
     json: bool,
     format: Option<&str>,
     interval: Duration,
-    max_polls: usize,
+    out: &mut dyn std::io::Write,
 ) -> Result<Output, String> {
-    let mut metrics = transport.send("GET", &format!("/api/v1/jobs/{id}/metrics"), None)?;
-    for _ in 0..max_polls {
-        let state = transport.send("GET", &format!("/api/v1/jobs/{id}"), None)?;
+    let mut outage = false;
+    loop {
+        let polled = transport
+            .send("GET", &format!("/api/v1/jobs/{id}"), None)
+            .and_then(|job| Ok((job, transport.send("GET", &format!("/api/v1/jobs/{id}/metrics"), None)?)));
+        let (job, metrics) = match polled {
+            Ok(replies) => {
+                outage = false;
+                replies
+            }
+            Err(error) => {
+                if !outage {
+                    writeln!(out, "api unavailable, retrying: {error}")
+                        .and_then(|()| out.flush())
+                        .map_err(|error| format!("write follow update: {error}"))?;
+                    outage = true;
+                }
+                thread::sleep(interval);
+                continue;
+            }
+        };
         let terminal = matches!(
-            state.data.get("state").and_then(Value::as_str),
+            job.data.get("state").and_then(Value::as_str),
             Some("done" | "failed" | "cancelled" | "error")
         );
+        let line = if json {
+            let rendered = render::render(metrics, "jobs metrics", true, format)?;
+            let value: Value = serde_json::from_str(&rendered.stdout)
+                .map_err(|error| format!("encode follow update: {error}"))?;
+            value.to_string()
+        } else {
+            follow_line(&job.data, &metrics.data)
+        };
+        writeln!(out, "{line}").map_err(|error| format!("write follow update: {error}"))?;
+        out.flush().map_err(|error| format!("flush follow update: {error}"))?;
         if terminal {
-            break;
+            return Ok(Output::ok(String::new()));
         }
         thread::sleep(interval);
-        metrics = transport.send("GET", &format!("/api/v1/jobs/{id}/metrics"), None)?;
     }
-    render::render(metrics, "jobs metrics", json, format)
 }
 
 fn positional(parsed: &args::Parsed, index: usize) -> Option<&str> {
@@ -508,6 +564,18 @@ pub fn execute(args: &[String], transport: &dyn Transport) -> Result<Output, Str
                 format,
             )
         }
+        ["jobs", "cancel"] => {
+            let id = resolve_job_id(transport, &parsed)?;
+            send(
+                transport,
+                "POST",
+                &format!("/api/v1/jobs/{id}/cancel"),
+                Some(json!({})),
+                "jobs cancel",
+                json,
+                format,
+            )
+        }
         ["jobs", "report"] => send(
             transport,
             "GET",
@@ -590,28 +658,30 @@ mod tests {
             }
             let poll = self.polls.get() + 1;
             self.polls.set(poll);
-            let state = if poll < 3 { "busy" } else { "done" };
+            if poll == 2 {
+                return Err("connection refused".to_owned());
+            }
+            let state = if poll < 4 { "busy" } else { "done" };
             Ok(ApiReply::new(200, "jobs inspect", json!({ "state": state })))
         }
     }
 
     #[test]
-    fn metrics_follow_polls_until_the_job_is_terminal() {
+    fn metrics_follow_streams_each_update_and_rides_through_an_api_outage() {
         let transport = FollowingTransport {
             polls: Cell::new(0),
             metric_reads: Cell::new(0),
         };
-        let output = follow_metrics_with(
-            &transport,
-            "7",
-            true,
-            None,
-            Duration::ZERO,
-            10,
-        )
-        .expect("follow metrics");
-        assert_eq!(transport.polls.get(), 3);
-        assert_eq!(transport.metric_reads.get(), 3);
-        assert!(output.stdout.contains("\"samples\": 3"), "{}", output.stdout);
+        let mut streamed = Vec::new();
+        let output = follow_metrics_to(&transport, "7", false, None, Duration::ZERO, &mut streamed)
+            .expect("follow metrics");
+        let text = String::from_utf8(streamed).expect("utf8");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(transport.polls.get(), 4);
+        assert_eq!(lines.len(), 4, "{text}");
+        assert!(lines[0].starts_with("state=busy samples=1"), "{text}");
+        assert!(lines[1].starts_with("api unavailable, retrying"), "{text}");
+        assert!(lines[3].starts_with("state=done samples=3"), "{text}");
+        assert!(output.stdout.is_empty());
     }
 }

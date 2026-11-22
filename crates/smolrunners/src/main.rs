@@ -5,7 +5,7 @@ fn main() -> ExitCode {
     match args.get(1).map(String::as_str) {
         Some("serve") => {
             let rest = &args[2..];
-            let result = if rest.iter().any(|argument| argument == "--scenario") {
+            let result = if rest.iter().any(|argument| argument == "--pilot") {
                 smolrunners::coordinator::serve(rest)
             } else {
                 smolrunners::api::serve(rest)

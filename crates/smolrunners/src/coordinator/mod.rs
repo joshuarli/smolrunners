@@ -1,796 +1,533 @@
-mod effects;
+mod adapter;
+mod config;
+mod execution;
+mod plan;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, Read, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
-use smolrunners_core::lifecycle::{ExecutionState, Lifecycle, SubmitOutcome, Submitted};
+use smolrunners_core::domain::{Arch, Distro, ImageTarget, Profile, ProfileName, ProfileRevision, ReleaseToken};
+use smolrunners_core::lifecycle::{Effect, EffectResult, EffectSink, Lifecycle, LifecycleError, Submitted};
 use smolrunners_core::ledger::{
-    HostAdmission, HostCapacity, HostIncarnation, HostKey, Ledger, Tick, VmmOverhead,
+    HostAdmission, HostCapacity, HostIncarnation, HostKey, Ledger, ReservationOutcome, ReservationRequest, Tick,
 };
-use smolrunners_core::proto::{self, Frame, SCHEMA_VERSION};
+use smolrunners_core::proto::{Frame, SCHEMA_VERSION};
 use smolrunners_core::store::Store;
-use smolrunners_core::telemetry::History;
 
-use effects::Sampler;
+use crate::api::{EffectiveLimits, NewExecution, State};
+use adapter::AdapterLink;
+use config::{AdapterConfig, PilotConfig};
 
-#[derive(Debug, Clone)]
-pub(crate) struct Config {
-    pub(crate) listen: String,
-    pub(crate) state_dir: PathBuf,
-    pub(crate) scenarios: Vec<String>,
-    pub(crate) scenarios_dir: PathBuf,
-    pub(crate) adapter: PathBuf,
-    pub(crate) image: String,
-    pub(crate) runtime_dir: PathBuf,
-    pub(crate) launcher: PathBuf,
-    pub(crate) agent: PathBuf,
-    pub(crate) profile: String,
-    pub(crate) vcpu: u16,
-    pub(crate) memory_gib: u32,
-    pub(crate) host_key: String,
-    pub(crate) host_vcpu: u32,
-    pub(crate) host_memory_gib: u32,
-    pub(crate) guest_exec: Option<PathBuf>,
-    pub(crate) guest_state_dir: PathBuf,
-    pub(crate) collector: PathBuf,
-    pub(crate) executor: PathBuf,
-    pub(crate) fixture_script: PathBuf,
-    pub(crate) guest_smolvm: PathBuf,
-    pub(crate) guest_machine: String,
-    pub(crate) guest_home: PathBuf,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct JobRuntime {
-    pub(crate) job_id: String,
-    pub(crate) protocol_job_id: String,
-    pub(crate) request_id: i64,
-    pub(crate) execution_attempt_id: i64,
-    pub(crate) host_id: i64,
-    pub(crate) profile: String,
-    pub(crate) machine: Option<String>,
-    pub(crate) reservation_id: Option<u64>,
-    pub(crate) reservation_sequence: Option<u64>,
-    pub(crate) status: String,
-    pub(crate) scenario: String,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct RuntimeState {
-    pub(crate) jobs: BTreeMap<String, JobRuntime>,
-}
-
-pub(crate) fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64
+        .as_millis() as i64
 }
 
-pub(crate) fn audit(log: &Path, line: &str) {
-    let stamped = format!("{} {}\n", now_ms(), line);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log) {
-        let _ = file.write_all(stamped.as_bytes());
-    }
-    eprintln!("coordinator: {line}");
-}
+struct RecordOnly;
 
-fn value(args: &[String], index: &mut usize, flag: &str) -> Result<String, String> {
-    *index += 1;
-    args.get(*index)
-        .cloned()
-        .ok_or_else(|| format!("{flag} requires a value"))
-}
-
-fn parse_args(args: &[String]) -> Result<Config, String> {
-    let mut listen = "127.0.0.1:8793".to_owned();
-    let mut state_dir = PathBuf::from(".work/coordinator-state");
-    let mut scenarios = Vec::new();
-    let mut scenarios_dir = std::env::var_os("SMOLRUNNERS_SCENARIOS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("adapter/testdata/scenarios"));
-    let mut adapter = PathBuf::from("adapter/smolrunners-adapter");
-    let mut image = "alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf".to_owned();
-    let mut runtime_dir = PathBuf::from("/opt/runtime");
-    let mut launcher = PathBuf::from("tests/vm/bin/smolrunners-launcher");
-    let mut agent = std::env::current_exe().map_err(|error| format!("current exe: {error}"))?;
-    let mut profile = "fixture-1c2g".to_owned();
-    let mut vcpu = 1u16;
-    let mut memory_gib = 2u32;
-    let mut host_key = "sr-host-a".to_owned();
-    let mut host_vcpu = 2u32;
-    let mut host_memory_gib = 4u32;
-    let mut guest_exec: Option<PathBuf> = None;
-    let mut guest_state_dir = PathBuf::from("/work/tmp/connected-job-state");
-    let mut collector = PathBuf::from("/work/smolrunners/tests/vm/bin/smolrunners-collector");
-    let mut executor = PathBuf::from("/work/smolrunners/tests/fixtures/executor");
-    let mut fixture_script = PathBuf::from("/work/tmp/connected-job-state/fixture.sh");
-    let mut guest_smolvm = PathBuf::from(".work/runtime/darwin-arm64/smolvm");
-    let mut guest_machine = "sr-dev".to_owned();
-    let mut guest_home = PathBuf::from(".work/linux-host/home");
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--listen" => listen = value(args, &mut index, "--listen")?,
-            "--state-dir" => state_dir = PathBuf::from(value(args, &mut index, "--state-dir")?),
-            "--scenario" => {
-                for name in value(args, &mut index, "--scenario")?.split(',') {
-                    if !name.is_empty() {
-                        scenarios.push(name.to_owned());
-                    }
-                }
-            }
-            "--scenarios-dir" => {
-                scenarios_dir = PathBuf::from(value(args, &mut index, "--scenarios-dir")?)
-            }
-            "--adapter" => adapter = PathBuf::from(value(args, &mut index, "--adapter")?),
-            "--image" => image = value(args, &mut index, "--image")?,
-            "--runtime-dir" => runtime_dir = PathBuf::from(value(args, &mut index, "--runtime-dir")?),
-            "--launcher" => launcher = PathBuf::from(value(args, &mut index, "--launcher")?),
-            "--agent" => agent = PathBuf::from(value(args, &mut index, "--agent")?),
-            "--profile" => profile = value(args, &mut index, "--profile")?,
-            "--vcpu" => vcpu = value(args, &mut index, "--vcpu")?.parse().map_err(|_| "bad --vcpu")?,
-            "--memory-gib" => {
-                memory_gib = value(args, &mut index, "--memory-gib")?
-                    .parse()
-                    .map_err(|_| "bad --memory-gib")?
-            }
-            "--host-key" => host_key = value(args, &mut index, "--host-key")?,
-            "--host-vcpu" => {
-                host_vcpu = value(args, &mut index, "--host-vcpu")?
-                    .parse()
-                    .map_err(|_| "bad --host-vcpu")?
-            }
-            "--host-memory-gib" => {
-                host_memory_gib = value(args, &mut index, "--host-memory-gib")?
-                    .parse()
-                    .map_err(|_| "bad --host-memory-gib")?
-            }
-            "--guest-exec" => guest_exec = Some(PathBuf::from(value(args, &mut index, "--guest-exec")?)),
-            "--guest-state-dir" => {
-                guest_state_dir = PathBuf::from(value(args, &mut index, "--guest-state-dir")?)
-            }
-            "--collector" => collector = PathBuf::from(value(args, &mut index, "--collector")?),
-            "--executor" => executor = PathBuf::from(value(args, &mut index, "--executor")?),
-            "--fixture-script" => {
-                fixture_script = PathBuf::from(value(args, &mut index, "--fixture-script")?)
-            }
-            "--guest-smolvm" => guest_smolvm = PathBuf::from(value(args, &mut index, "--guest-smolvm")?),
-            "--guest-machine" => guest_machine = value(args, &mut index, "--guest-machine")?,
-            "--guest-home" => guest_home = PathBuf::from(value(args, &mut index, "--guest-home")?),
-            other => return Err(format!("serve: unknown option {other}")),
-        }
-        index += 1;
-    }
-    if scenarios.is_empty() {
-        return Err("serve: --scenario requires at least one name".to_owned());
-    }
-    Ok(Config {
-        listen,
-        state_dir,
-        scenarios,
-        scenarios_dir,
-        adapter,
-        image,
-        runtime_dir,
-        launcher,
-        agent,
-        profile,
-        vcpu,
-        memory_gib,
-        host_key,
-        host_vcpu,
-        host_memory_gib,
-        guest_exec,
-        guest_state_dir,
-        collector,
-        executor,
-        fixture_script,
-        guest_smolvm,
-        guest_machine,
-        guest_home,
-    })
-}
-
-pub fn recorded_ack(submitted: &Submitted) -> Result<Frame, String> {
-    match &submitted.ack {
-        Frame::Ack {
-            recorded: true, ..
-        } => Ok(submitted.ack.clone()),
-        Frame::Ack {
-            recorded: false, ..
-        } => Err("refusing to emit an unrecorded ack".to_owned()),
-        other => Err(format!("expected an ack frame, got {}", other.kind())),
+impl EffectSink for RecordOnly {
+    fn perform(&mut self, _effect: Effect) -> Result<EffectResult, LifecycleError> {
+        Ok(EffectResult::Committed)
     }
 }
 
-pub fn emit_ack<W: Write>(writer: &mut W, submitted: &Submitted) -> Result<(), String> {
-    let ack = recorded_ack(submitted)?;
-    proto::write_frame(writer, &ack).map_err(|error| error.to_string())
-}
-
-fn read_frame<R: Read>(reader: &mut R) -> Result<Frame, String> {
-    let mut prefix = [0u8; 4];
-    reader
-        .read_exact(&mut prefix)
-        .map_err(|error| format!("read frame prefix: {error}"))?;
-    let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > proto::MAX_FRAME_BYTES {
-        return Err(format!("invalid adapter frame length {length}"));
-    }
-    let mut body = vec![0u8; length];
-    reader
-        .read_exact(&mut body)
-        .map_err(|error| format!("read frame body: {error}"))?;
-    let mut framed = (body.len() as u32).to_be_bytes().to_vec();
-    framed.extend_from_slice(&body);
-    proto::decode(&framed).map_err(|error| error.to_string())
-}
-
-fn quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
-fn guest_shell(config: &Config, envs: &[(&str, String)]) -> String {
-    let mut parts = vec![
-        "env".to_owned(),
-        "-i".to_owned(),
-        format!("PATH={}", quote("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")),
-        format!("HOME={}", quote(&config.guest_home.display().to_string())),
-        format!("TMPDIR={}", quote(&config.guest_home.join("tmp").display().to_string())),
-        format!("XDG_CONFIG_HOME={}", quote(&config.guest_home.join(".config").display().to_string())),
-        format!("XDG_CACHE_HOME={}", quote(&config.guest_home.join(".cache").display().to_string())),
-    ];
-    parts.push(quote(&config.guest_smolvm.display().to_string()));
-    parts.push("machine".to_owned());
-    parts.push("exec".to_owned());
-    parts.push("--name".to_owned());
-    parts.push(quote(&config.guest_machine));
-    parts.push("--timeout".to_owned());
-    parts.push("3h".to_owned());
-    for (name, value) in envs {
-        parts.push("-e".to_owned());
-        parts.push(quote(&format!("{name}={value}")));
-    }
-    parts.push("-i".to_owned());
-    parts.push("--stream".to_owned());
-    parts.push("--".to_owned());
-    parts.push("sh".to_owned());
-    parts.push("-eu".to_owned());
-    parts.push("-c".to_owned());
-    parts.join(" ")
-}
-
-fn guest_inner(program: &Path, args: &[String]) -> String {
-    let mut parts = vec![quote(&program.display().to_string())];
-    parts.extend(args.iter().map(|argument| quote(argument)));
-    parts.join(" ")
-}
-
-pub(crate) fn runner(
-    config: &Config,
-    program: &Path,
-    args: &[String],
-    envs: &[(&str, String)],
-) -> Command {
-    if let Some(_helper) = &config.guest_exec {
-        let inner = guest_inner(program, args);
-        let mut command = Command::new("sh");
-        command.arg("-c").arg(format!(
-            "{} {}",
-            guest_shell(config, envs),
-            quote(&inner)
-        ));
-        command
-    } else {
-        let mut command = Command::new(program);
-        for (name, value) in envs {
-            command.env(name, value);
-        }
-        command.args(args);
-        command
-    }
-}
-
-pub(crate) fn detached_command(config: &Config, inner: &str, log: &Path) -> Command {
-    let shell = if config.guest_exec.is_some() {
-        format!(
-            "{} {} > {} 2>&1 < /dev/null &",
-            guest_shell(config, &[]),
-            quote(inner),
-            quote(&log.display().to_string())
-        )
-    } else {
-        format!("{} > {} 2>&1 < /dev/null &", inner, quote(&log.display().to_string()))
-    };
-    let mut command = Command::new("sh");
-    command.arg("-c").arg(shell);
-    command
-}
-
-pub(crate) fn smolvm_command(config: &Config, args: &[&str]) -> Command {
-    let guest_smolvm = config.runtime_dir.join("smolvm");
-    let program = if config.guest_exec.is_some() {
-        Path::new("/opt/runtime/smolvm")
-    } else {
-        &guest_smolvm
-    };
-    let state = if config.guest_exec.is_some() {
-        config.guest_state_dir.join("host/smolvm")
-    } else {
-        config.state_dir.join("host/smolvm")
-    };
-    let mut all = vec![
-        "--error-format".to_owned(),
-        "json".to_owned(),
-        "--state-dir".to_owned(),
-        state.display().to_string(),
-    ];
-    all.extend(args.iter().map(|value| (*value).to_owned()));
-    let envs = [
-        ("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_owned()),
-        ("HOME", config.guest_state_dir.join("home").display().to_string()),
-        ("TMPDIR", config.guest_state_dir.join("tmp").display().to_string()),
-        ("SMOLVM_LIB_DIR", config.runtime_dir.join("lib").display().to_string()),
-        (
-            "SMOLVM_AGENT_ROOTFS",
-            config.runtime_dir.join("agent-rootfs").display().to_string(),
-        ),
-    ];
-    runner(config, program, &all, &envs)
-}
-
-pub(crate) fn host_command(config: &Config, args: &[&str]) -> Command {
-    let program = if config.guest_exec.is_some() {
-        Path::new("/work/smolrunners/tests/vm/bin/smolrunners")
-    } else {
-        &config.agent
-    };
-    let host_state = if config.guest_exec.is_some() {
-        config.guest_state_dir.join("host")
-    } else {
-        config.state_dir.join("host")
-    };
-    let runtime = if config.guest_exec.is_some() {
-        PathBuf::from("/opt/runtime")
-    } else {
-        config.runtime_dir.clone()
-    };
-    let launcher = if config.guest_exec.is_some() {
-        PathBuf::from("/work/smolrunners/tests/vm/bin/smolrunners-launcher")
-    } else {
-        config.launcher.clone()
-    };
-    let mut all = vec![
-        "host".to_owned(),
-        "--state-dir".to_owned(),
-        host_state.display().to_string(),
-        "--runtime-dir".to_owned(),
-        runtime.display().to_string(),
-        "--launcher".to_owned(),
-        launcher.display().to_string(),
-        "--uid".to_owned(),
-        "60000".to_owned(),
-    ];
-    all.extend(args.iter().map(|value| (*value).to_owned()));
-    let envs: [(&str, String); 0] = [];
-    runner(config, program, &all, &envs)
-}
-
-struct Supervisor {
-    config: Config,
-    lifecycle: Lifecycle,
-    ledger: Ledger,
-    history: Arc<Mutex<History>>,
-    runtime: RuntimeState,
-    samplers: BTreeMap<String, Sampler>,
+pub(crate) struct Shared {
+    config: PilotConfig,
+    state: Arc<Mutex<State>>,
+    ledger: Mutex<Ledger>,
+    lifecycle: Mutex<Lifecycle>,
+    adapter: AdapterLink,
+    host_id: i64,
     audit_log: PathBuf,
-    runtime_path: PathBuf,
+    assigned_jobs: AtomicI64,
+    stopping: Mutex<std::collections::HashSet<i64>>,
+    reservation_pending: std::sync::atomic::AtomicBool,
+    wake: (Mutex<bool>, Condvar),
 }
 
-impl Supervisor {
-    fn new(config: Config) -> Result<Self, String> {
-        fs::create_dir_all(&config.state_dir).map_err(|error| format!("create state dir: {error}"))?;
-        let audit_log = config.state_dir.join("coordinator.log");
-        let runtime_path = config.state_dir.join("runtime.json");
-        let db_path = config.state_dir.join("coordinator.sqlite");
-        for directory in [
-            config.state_dir.join("home/.config"),
-            config.state_dir.join("home/.cache"),
-            config.state_dir.join("tmp"),
-            config.state_dir.join("host"),
-        ] {
-            fs::create_dir_all(&directory)
-                .map_err(|error| format!("create {}: {error}", directory.display()))?;
+impl Shared {
+    pub(crate) fn audit(&self, line: &str) {
+        let stamped = format!("{} {line}\n", now_ms());
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&self.audit_log) {
+            let _ = file.write_all(stamped.as_bytes());
         }
-        let store = Store::open(&db_path).map_err(|error| format!("open store: {error}"))?;
-        let mut lifecycle =
-            Lifecycle::from_store(store).map_err(|error| format!("open lifecycle: {error}"))?;
-        let mut ledger =
-            Ledger::open_path(&db_path).map_err(|error| format!("open ledger: {error}"))?;
-        let history = History::open(&db_path).map_err(|error| format!("open history: {error}"))?;
-        let now = Tick::new(now_ms());
-        let host_key = HostKey::new(config.host_key.clone());
+        eprintln!("coordinator: {line}");
+    }
+
+    pub(crate) fn host_log(&self, attempt: i64) -> PathBuf {
+        self.config.state_dir.join("hosts").join(format!("x{attempt}.log"))
+    }
+
+    pub(crate) fn jit_file(&self, attempt: i64) -> PathBuf {
+        self.config.state_dir.join("jit").join(format!("x{attempt}.jit"))
+    }
+
+    pub(crate) fn host_command(&self, limits: Option<&EffectiveLimits>) -> Command {
+        let host = &self.config.host;
+        let mut command = Command::new(&host.agent);
+        command
+            .arg("host")
+            .arg("--state-dir")
+            .arg(&host.state_dir)
+            .arg("--runtime-dir")
+            .arg(&host.runtime_dir)
+            .arg("--launcher")
+            .arg(&host.launcher);
+        if let Some(limits) = limits {
+            command
+                .arg("--cpu-max")
+                .arg(&limits.host_cpu_max)
+                .arg("--memory-max")
+                .arg(limits.host_memory_max_bytes.to_string())
+                .arg("--pids-max")
+                .arg(limits.host_pids_max.to_string());
+        }
+        command
+    }
+
+    fn revision(&self) -> Result<ProfileRevision, String> {
+        let arch = match self.config.host.arch.as_str() {
+            "arm64" => Arch::Arm64,
+            "x64" => Arch::X64,
+            other => return Err(format!("host.arch {other} is not arm64 or x64")),
+        };
+        let target = ImageTarget::new(Distro::Debian, ReleaseToken::from_parts(13, None), arch);
+        let name = ProfileName::new(self.config.profile.name.clone()).map_err(|error| error.to_string())?;
+        Ok(ProfileRevision::new(Profile::new(name, target, self.config.shape()?), 1))
+    }
+
+    fn reserve(&self) -> Result<Option<u64>, String> {
+        let revision = self.revision()?;
+        let disk = u64::from(self.config.profile.storage_gib) * 1024 * 1024 * 1024;
+        let mut ledger = self.ledger.lock().map_err(|_| "ledger lock poisoned".to_owned())?;
+        let outcome = ledger
+            .reserve(ReservationRequest::new(&revision, disk, None), Tick::new(now_ms() as u64))
+            .map_err(|error| error.to_string())?;
+        match outcome {
+            ReservationOutcome::Granted(offer) => {
+                let sequence = ledger
+                    .reservation(offer.reservation_id)
+                    .map(|reservation| reservation.sequence)
+                    .ok_or("granted reservation is missing")?;
+                ledger
+                    .mark_busy(offer.reservation_id, HostIncarnation::new(1))
+                    .map_err(|error| error.to_string())?;
+                Ok(Some(sequence))
+            }
+            ReservationOutcome::Pending { .. } => Ok(None),
+        }
+    }
+
+    pub(crate) fn release(&self, sequence: u64) -> Result<(), String> {
+        let mut ledger = self.ledger.lock().map_err(|_| "ledger lock poisoned".to_owned())?;
+        let Some(id) = ledger
+            .reservations()
+            .find(|reservation| reservation.sequence == sequence)
+            .map(|reservation| reservation.id)
+        else {
+            return Ok(());
+        };
         ledger
-            .register_host(HostCapacity {
-                host_key: host_key.clone(),
-                incarnation: HostIncarnation::new(1),
-                hostname: config.host_key.clone(),
-                arch: smolrunners_core::domain::Arch::Arm64,
-                total_vcpu: config.host_vcpu,
-                total_memory_gib: config.host_memory_gib,
-                total_disk_bytes: 64 * 1024 * 1024 * 1024,
-                headroom_vcpu: 0,
-                headroom_memory_gib: 0,
-                headroom_disk_bytes: 0,
-                vmm_overhead: VmmOverhead::zero(),
-                admission: HostAdmission::Eligible,
-                cache_zone: None,
-                last_contact: now,
-            })
-            .map_err(|error| format!("register host: {error}"))?;
-        let runtime = if runtime_path.exists() {
-            let raw = fs::read_to_string(&runtime_path)
-                .map_err(|error| format!("read runtime state: {error}"))?;
-            serde_json::from_str(&raw).unwrap_or_default()
-        } else {
-            RuntimeState::default()
-        };
-        let recovered = lifecycle
-            .recover(&format!("t={}", now_ms()))
-            .map_err(|error| format!("recover: {error}"))?;
-        audit(&audit_log, &format!("BOOT host={} recovered={}", config.host_key, recovered.len()));
-        let history = Arc::new(Mutex::new(history));
-        let mut samplers = BTreeMap::new();
-        for job in runtime.jobs.values() {
-            if job.machine.is_some() && job.status != "done" {
-                match effects::start_sampling(&config, job, history.clone(), &audit_log) {
-                    Ok(sampler) => {
-                        audit(&audit_log, &format!("REATTACH job={} attempt={} machine={}",
-                            job.job_id, job.execution_attempt_id,
-                            job.machine.as_deref().unwrap_or("unknown")));
-                        samplers.insert(job.job_id.clone(), sampler);
-                    }
-                    Err(error) => audit(&audit_log, &format!("REATTACH_FAILED job={} error={error}", job.job_id)),
-                }
-            }
-        }
-        Ok(Self {
-            config,
-            lifecycle,
-            ledger,
-            history,
-            runtime,
-            samplers,
-            audit_log,
-            runtime_path,
-        })
-    }
-
-    fn persist_runtime(&self) {
-        let raw = match serde_json::to_string_pretty(&self.runtime) {
-            Ok(raw) => raw,
-            Err(_) => return,
-        };
-        let temporary = self.runtime_path.with_extension("json.tmp");
-        if fs::write(&temporary, raw).is_ok() {
-            let _ = fs::rename(&temporary, &self.runtime_path);
-        }
-    }
-
-    fn kill_stale_adapter(&self) {
-        let pid_path = self.config.state_dir.join("adapter.pid");
-        if let Ok(text) = fs::read_to_string(&pid_path) {
-            if let Ok(pid) = text.trim().parse::<i32>() {
-                if pid > 0 {
-                    let _ = Command::new("kill")
-                        .arg("-9")
-                        .arg(pid.to_string())
-                        .status();
-                    audit(&self.audit_log, &format!("REAP_ADAPTER pid={pid}"));
-                }
-            }
-        }
-        let _ = fs::remove_file(pid_path);
-    }
-
-    fn run(&mut self) -> Result<(), String> {
-        self.kill_stale_adapter();
-        for scenario in self.config.scenarios.clone() {
-            self.run_scenario(&scenario)?;
-        }
-        audit(&self.audit_log, "COMPLETE");
-        Ok(())
-    }
-
-    fn run_scenario(&mut self, scenario: &str) -> Result<(), String> {
-        audit(&self.audit_log, &format!("SCENARIO name={scenario}"));
-        let log_path = self.config.state_dir.join(format!("adapter-{scenario}.log"));
-        let log = File::create(&log_path).map_err(|error| format!("adapter log: {error}"))?;
-        let error_log = log
-            .try_clone()
-            .map_err(|error| format!("clone adapter log: {error}"))?;
-        let (adapter_program, adapter_scenarios) = if self.config.guest_exec.is_some() {
-            (
-                PathBuf::from("/work/smolrunners/tests/cli/bin/smolrunners-adapter"),
-                self.config.guest_state_dir.join("scenarios"),
+            .release(
+                id,
+                &HostKey::new(self.config.host.key.clone()),
+                HostIncarnation::new(1),
+                Tick::new(now_ms() as u64),
             )
-        } else {
-            (self.config.adapter.clone(), self.config.scenarios_dir.clone())
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn wake(&self) {
+        let (flag, signal) = &self.wake;
+        if let Ok(mut woken) = flag.lock() {
+            *woken = true;
+            signal.notify_all();
+        }
+    }
+
+    fn live(&self) -> Vec<crate::api::JobRecord> {
+        self.state.lock().map(|state| state.live_jobs()).unwrap_or_default()
+    }
+}
+
+fn private_dir(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|error| format!("create {}: {error}", path.display()))?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| format!("permit {}: {error}", path.display()))
+}
+
+fn open(config: PilotConfig) -> Result<Arc<Shared>, String> {
+    private_dir(&config.state_dir)?;
+    private_dir(&config.state_dir.join("hosts"))?;
+    private_dir(&config.state_dir.join("jit"))?;
+    for stale in fs::read_dir(config.state_dir.join("jit")).map_err(|error| format!("list jit dir: {error}"))? {
+        if let Ok(entry) = stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    let db_path = config.state_dir.join("coordinator.sqlite");
+    let store = Store::open(&db_path).map_err(|error| format!("open store: {error}"))?;
+    let lifecycle = Lifecycle::from_store(store).map_err(|error| format!("open lifecycle: {error}"))?;
+    let mut ledger = Ledger::open_path(&db_path).map_err(|error| format!("open ledger: {error}"))?;
+    let host = &config.host;
+    ledger
+        .register_host(HostCapacity {
+            host_key: HostKey::new(host.key.clone()),
+            incarnation: HostIncarnation::new(1),
+            hostname: host.key.clone(),
+            arch: match host.arch.as_str() {
+                "x64" => Arch::X64,
+                _ => Arch::Arm64,
+            },
+            total_vcpu: host.vcpu,
+            total_memory_gib: host.memory_gib,
+            total_disk_bytes: host.disk_gib * 1024 * 1024 * 1024,
+            headroom_vcpu: 0,
+            headroom_memory_gib: 0,
+            headroom_disk_bytes: 0,
+            vmm_overhead: config.overhead(),
+            admission: HostAdmission::Eligible,
+            cache_zone: None,
+            last_contact: Tick::new(now_ms() as u64),
+        })
+        .map_err(|error| format!("register host: {error}"))?;
+    let mut state = State::open(&config.state_dir.join("api"))?;
+    let host_id = state.ensure_local_host(
+        &host.key,
+        &host.arch,
+        u16::try_from(host.vcpu).unwrap_or(u16::MAX),
+        host.memory_gib,
+        now_ms(),
+    )?;
+    let audit_log = config.state_dir.join("coordinator.log");
+    Ok(Arc::new(Shared {
+        config,
+        state: Arc::new(Mutex::new(state)),
+        ledger: Mutex::new(ledger),
+        lifecycle: Mutex::new(lifecycle),
+        adapter: AdapterLink::new(),
+        host_id,
+        audit_log,
+        assigned_jobs: AtomicI64::new(0),
+        stopping: Mutex::new(std::collections::HashSet::new()),
+        reservation_pending: std::sync::atomic::AtomicBool::new(false),
+        wake: (Mutex::new(false), Condvar::new()),
+    }))
+}
+
+fn scale(shared: &Arc<Shared>) -> Result<(), String> {
+    let assigned = shared.assigned_jobs.load(Ordering::Relaxed);
+    let live = shared.live().len();
+    let wanted = plan::runners_to_start(shared.config.max_concurrency, assigned, live);
+    shared.reservation_pending.store(false, Ordering::Relaxed);
+    for _ in 0..wanted {
+        let Some(sequence) = shared.reserve()? else {
+            shared.reservation_pending.store(true, Ordering::Relaxed);
+            shared.audit(&format!("RESERVE_PENDING assigned={assigned} live={live}"));
+            return Ok(());
         };
-        let mut child = runner(
-            &self.config,
-            &adapter_program,
-            &[],
-            &[("SMOLRUNNERS_SCENARIOS_DIR", adapter_scenarios.display().to_string())],
-        )
+        let spec = NewExecution {
+            profile: shared.config.profile.name.clone(),
+            labels: shared.config.profile.labels.clone(),
+            host_id: shared.host_id,
+            limits: shared.config.limits()?,
+            reservation_sequence: Some(sequence),
+            runner_name_prefix: shared.config.runner_prefix(),
+        };
+        let job = match shared.state.lock() {
+            Ok(mut state) => state.create_execution(spec, now_ms()),
+            Err(_) => Err("state lock poisoned".to_owned()),
+        };
+        let job = match job {
+            Ok(job) => job,
+            Err(error) => {
+                let _ = shared.release(sequence);
+                return Err(error);
+            }
+        };
+        shared.audit(&format!(
+            "RESERVE job={} attempt={} runner={} reservation_sequence={sequence} assigned={assigned}",
+            job.id,
+            job.execution_attempt_id,
+            job.runner_name.as_deref().unwrap_or("")
+        ));
+        execution::spawn(shared.clone(), job.id, false);
+    }
+    Ok(())
+}
+
+fn handle_event(shared: &Arc<Shared>, frame: &Frame) -> Result<Frame, String> {
+    let submitted: Submitted = shared
+        .lifecycle
+        .lock()
+        .map_err(|_| "lifecycle lock poisoned".to_owned())?
+        .submit(frame, &format!("t={}", now_ms()), &mut RecordOnly)
+        .map_err(|error| format!("record {}: {error}", frame.kind()))?;
+    match frame {
+        Frame::Capacity { assigned_jobs, .. } => {
+            shared.assigned_jobs.store(*assigned_jobs, Ordering::Relaxed);
+            scale(shared)?;
+        }
+        Frame::JobAvailable { job_id, labels, .. } => {
+            shared.audit(&format!("DEMAND job={job_id} labels={}", labels.join(",")));
+        }
+        Frame::JobStarted {
+            job_id,
+            request_id,
+            runner_name: Some(runner_name),
+            ..
+        } => joined(shared, runner_name.as_str(), |job| {
+            job.state = "busy".to_owned();
+            job.protocol_job_id = job_id.to_string();
+            job.request_id = request_id.get();
+            job.start_at_ms = Some(now_ms());
+            job.idle_since_ms = None;
+        }),
+        Frame::JobCompleted {
+            job_id,
+            result,
+            runner_name: Some(runner_name),
+            ..
+        } => joined(shared, runner_name.as_str(), |job| {
+            job.protocol_job_id = job_id.to_string();
+            job.github_result = Some(result.clone());
+            job.github_completed_at_ms = Some(now_ms());
+            if crate::api::is_terminal(&job.state) {
+                let (state, recorded) = plan::final_state(&plan::Outcome {
+                    cancel_requested: job.cancel_requested,
+                    github_result: Some(result.as_str()),
+                    runner_exit: None,
+                    failure: None,
+                });
+                job.state = state.to_owned();
+                job.result = Some(recorded);
+            }
+        }),
+        _ => {}
+    }
+    match &submitted.ack {
+        Frame::Ack { recorded: true, .. } => Ok(submitted.ack.clone()),
+        _ => Err(format!("refusing to acknowledge unrecorded event {}", frame.id())),
+    }
+}
+
+fn joined(shared: &Shared, runner_name: &str, change: impl FnOnce(&mut crate::api::JobRecord)) {
+    let Ok(mut state) = shared.state.lock() else {
+        return;
+    };
+    let Some(id) = state.job_by_runner(runner_name).map(|job| job.id) else {
+        drop(state);
+        shared.audit(&format!("UNKNOWN_RUNNER runner={runner_name}"));
+        return;
+    };
+    if let Err(error) = state.update_job(id, change) {
+        drop(state);
+        shared.audit(&format!("STATE_ERROR job={id} error={error}"));
+        return;
+    }
+    drop(state);
+    shared.audit(&format!("JOIN runner={runner_name} job={id}"));
+}
+
+enum AdapterEnd {
+    Stopped(Option<String>),
+    Failed(String),
+}
+
+fn run_adapter(shared: &Arc<Shared>) -> AdapterEnd {
+    let config = &shared.config.adapter;
+    let mut command = Command::new(config.program());
+    let scenario = match config {
+        AdapterConfig::Github { github_config, .. } => {
+            command.arg("--github-config").arg(github_config);
+            String::new()
+        }
+        AdapterConfig::Fake { scenario, scenarios_dir, .. } => {
+            command.arg("--fake").env("SMOLRUNNERS_SCENARIOS_DIR", scenarios_dir);
+            scenario.clone()
+        }
+    };
+    let log = match OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(shared.config.state_dir.join("adapter.log"))
+    {
+        Ok(log) => log,
+        Err(error) => return AdapterEnd::Failed(format!("open adapter log: {error}")),
+    };
+    let mut child = match command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(error_log)
+        .stderr(log)
         .spawn()
-        .map_err(|error| format!("spawn adapter: {error}"))?;
-        if let Ok(pid) = i32::try_from(child.id()) {
-            let _ = fs::write(self.config.state_dir.join("adapter.pid"), pid.to_string());
-        }
-        let mut writer = child.stdin.take().ok_or("adapter stdin unavailable")?;
-        let stdout = child.stdout.take().ok_or("adapter stdout unavailable")?;
-        let mut reader = BufReader::new(stdout);
-        let start = Frame::Run {
-            schema_version: SCHEMA_VERSION,
-            id: format!("run-{scenario}"),
-            scenario: scenario.to_owned(),
-        };
-        proto::write_frame(&mut writer, &start).map_err(|error| error.to_string())?;
-        loop {
-            let frame = match read_frame(&mut reader) {
-                Ok(frame) => frame,
-                Err(error) => {
-                    let _ = child.kill();
-                    return Err(format!("read adapter frame: {error}"));
-                }
-            };
-            if frame.is_ack() {
-                let _ = child.kill();
-                return Err("adapter sent an ack frame to the coordinator".to_owned());
-            }
-            if matches!(
-                &frame,
-                Frame::Session {
-                    session_event,
-                    ..
-                } if session_event == "adapter_stopped"
-            ) {
+    {
+        Ok(child) => child,
+        Err(error) => return AdapterEnd::Failed(format!("spawn adapter: {error}")),
+    };
+    let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        let _ = child.kill();
+        return AdapterEnd::Failed("adapter pipes unavailable".to_owned());
+    };
+    shared.adapter.attach(stdin);
+    let start = Frame::Run {
+        schema_version: SCHEMA_VERSION,
+        id: format!("run-{}", now_ms()),
+        scenario,
+    };
+    let mut end = match shared.adapter.write(&start) {
+        Ok(()) => None,
+        Err(error) => Some(AdapterEnd::Failed(format!("start adapter: {error}"))),
+    };
+    let mut reader = BufReader::new(stdout);
+    while end.is_none() {
+        let frame = match adapter::read_frame(&mut reader) {
+            Ok(frame) => frame,
+            Err(error) => {
+                end = Some(AdapterEnd::Failed(format!("read adapter frame: {error}")));
                 break;
             }
-            self.dispatch(&frame, scenario, &mut writer)?;
-        }
-        let _ = child.wait();
-        let _ = fs::remove_file(self.config.state_dir.join("adapter.pid"));
-        Ok(())
-    }
-
-    fn dispatch<W: Write>(&mut self, frame: &Frame, scenario: &str, writer: &mut W) -> Result<(), String> {
-        let job_id = effects::frame_job_id(frame).map(str::to_owned);
-        if let (Frame::JobAvailable { job_id, request_id, labels, .. }, Some(key)) =
-            (frame, job_id.as_deref())
-        {
-            self.ensure_job(key, job_id.as_str(), request_id.get(), labels, scenario);
-        }
-        let sink_job = match frame {
-            Frame::AcquireOutcome { request_ids, .. } => request_ids
-                .iter()
-                .find_map(|request| {
-                    self.runtime
-                        .jobs
-                        .values()
-                        .find(|job| job.request_id == request.get())
-                        .map(|job| job.job_id.clone())
-                })
-                .unwrap_or_else(|| frame.id().to_owned()),
-            _ => job_id.clone().unwrap_or_else(|| frame.id().to_owned()),
         };
-        let now = format!("t={}", now_ms());
-        let (submitted, reserved) = {
-            let mut sink = effects::HostSink::new(
-                &self.config,
-                &mut self.ledger,
-                &mut self.runtime,
-                self.history.clone(),
-                &self.audit_log,
-                sink_job,
-            );
-            let outcome = self
-                .lifecycle
-                .submit_with_kill(frame, &now, &mut sink, None)
-                .map_err(|error| format!("submit {}: {error}", frame.kind()))?;
-            let submitted = match outcome {
-                SubmitOutcome::Completed(submitted) => submitted,
-                SubmitOutcome::Killed => return Err("unexpected kill point".to_owned()),
-            };
-            (submitted, sink.reservation_id())
-        };
-        audit(
-            &self.audit_log,
-            &format!(
-                "EVENT kind={} id={} decision={} recorded={} replay={}",
-                frame.kind(),
-                frame.id(),
-                submitted.decision.as_str(),
-                matches!(&submitted.ack, Frame::Ack { recorded: true, .. }),
-                submitted.replayed
-            ),
-        );
-        if submitted.decision.as_str() != "accept" {
-            emit_ack(writer, &submitted)?;
-            return Ok(());
-        }
-
         match frame {
-            Frame::JobAvailable { .. } => {
-                if let Some(id) = reserved {
-                    if let Some(key) = job_id.as_deref() {
-                        if let Some(job) = self.runtime.jobs.get_mut(key) {
-                            job.reservation_id = Some(id);
-                            job.status = "reserved".to_owned();
-                        }
-                        self.persist_runtime();
-                    }
-                }
+            Frame::CommandResult { .. } => shared.adapter.resolve(frame),
+            Frame::Ack { .. } | Frame::JitRequest { .. } | Frame::RemoveRunner { .. } | Frame::Run { .. } => {
+                end = Some(AdapterEnd::Failed(format!("adapter sent a {} frame", frame.kind())));
             }
-            Frame::JobAssigned { .. } if submitted.replayed => {
-                let key = job_id.as_deref().unwrap_or("unknown");
-                let deadline = Instant::now() + Duration::from_secs(20);
-                let mut observed = 0u64;
-                while Instant::now() < deadline {
-                    observed = self
-                        .samplers
-                        .get(key)
-                        .map(|sampler| sampler.samples.load(Ordering::Relaxed))
-                        .unwrap_or(0);
-                    if observed >= 2 {
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(100));
-                }
-                audit(
-                    &self.audit_log,
-                    &format!(
-                        "RESUME_WAIT job={key} reason=coordinator_restart samples={observed} ready={}",
-                        observed >= 2
-                    ),
-                );
+            Frame::Session { ref session_event, ref reason, .. } if session_event == "adapter_stopped" => {
+                end = Some(AdapterEnd::Stopped(reason.clone()));
             }
-            Frame::JobAssigned { .. } if !submitted.replayed => {
-                let key = job_id.clone().ok_or("assignment has no job id")?;
-                let event_id = format!("provision-{key}");
-                let requested = [
-                    smolrunners_core::lifecycle::Effect::CreateGuest,
-                    smolrunners_core::lifecycle::Effect::StartSampling,
-                ];
-                {
-                    let mut sink = effects::HostSink::new(
-                        &self.config,
-                        &mut self.ledger,
-                        &mut self.runtime,
-                        self.history.clone(),
-                        &self.audit_log,
-                        key.clone(),
-                    );
-                    let outcome = self
-                        .lifecycle
-                        .submit_effects(&event_id, &requested, Some(ExecutionState::Busy), &now, &mut sink, None)
-                        .map_err(|error| format!("launch {key}: {error}"))?;
-                    match outcome {
-                        SubmitOutcome::Completed(_) => {}
-                        SubmitOutcome::Killed => return Err("unexpected kill point".to_owned()),
-                    }
-                    if let Some(sampler) = sink.sampler.take() {
-                        self.samplers.insert(key.clone(), sampler);
-                    }
-                    let reservation = sink.reservation_id();
-                    if let Some(job) = self.runtime.jobs.get_mut(&key) {
-                        job.reservation_id = reservation;
+            event => match handle_event(shared, &event) {
+                Ok(ack) => {
+                    if let Err(error) = shared.adapter.write(&ack) {
+                        end = Some(AdapterEnd::Failed(format!("write ack: {error}")));
                     }
                 }
-                if let Some(job) = self.runtime.jobs.get_mut(&key) {
-                    job.status = "busy".to_owned();
-                }
-                self.persist_runtime();
-                let workload_job = self.runtime.jobs.get(&key).cloned();
-                if let Some(job) = workload_job {
-                    effects::run_workload(&self.config, &job, &self.audit_log)?;
-                }
-            }
-            Frame::JobCompleted { result, .. } => {
-                if let Some(key) = job_id.as_deref() {
-                    if let Some(mut sampler) = self.samplers.remove(key) {
-                        sampler.stop();
-                    }
-
-                    let attempt = self
-                        .runtime
-                        .jobs
-                        .get(key)
-                        .map(|job| job.execution_attempt_id)
-                        .unwrap_or(0);
-                    if let Some(job) = self.runtime.jobs.get_mut(key) {
-                        job.status = "done".to_owned();
-                    }
-                    self.persist_runtime();
-                    audit(&self.audit_log, &format!("JOB_DONE job={key} attempt={attempt} result={result}"));
-                }
-            }
-            _ => {}
+                Err(error) => end = Some(AdapterEnd::Failed(error)),
+            },
         }
-        emit_ack(writer, &submitted)
     }
+    shared.adapter.detach();
+    let _ = child.kill();
+    let _ = child.wait();
+    end.unwrap_or(AdapterEnd::Failed("adapter loop ended".to_owned()))
+}
 
-    fn ensure_job(&mut self, key: &str, job_id: &str, request_id: i64, labels: &[String], scenario: &str) {
-        if self.runtime.jobs.contains_key(key) {
-            return;
+fn supervise_adapter(shared: &Arc<Shared>) {
+    let mut delay = Duration::from_secs(5);
+    loop {
+        shared.audit("ADAPTER_START");
+        let end = run_adapter(shared);
+        match (&shared.config.adapter, end) {
+            (AdapterConfig::Fake { .. }, AdapterEnd::Stopped(reason)) => {
+                shared.audit(&format!("ADAPTER_STOPPED reason={}", reason.unwrap_or_default()));
+                return;
+            }
+            (_, AdapterEnd::Stopped(reason)) => {
+                shared.audit(&format!("ADAPTER_STOPPED reason={}", reason.unwrap_or_default()));
+            }
+            (_, AdapterEnd::Failed(error)) => shared.audit(&format!("ADAPTER_FAILED error={error}")),
         }
-        let attempt_id = self.next_attempt_id();
-        let host_id = 1;
-        let job = JobRuntime {
-            job_id: key.to_owned(),
-            protocol_job_id: job_id.to_owned(),
-            request_id,
-            execution_attempt_id: attempt_id,
-            host_id,
-            profile: self.config.profile.clone(),
-            machine: None,
-            reservation_id: None,
-            reservation_sequence: None,
-            status: "demanded".to_owned(),
-            scenario: scenario.to_owned(),
+        shared.audit(&format!("ADAPTER_RESTART in_ms={}", delay.as_millis()));
+        thread::sleep(delay);
+        delay = (delay * 2).min(Duration::from_secs(120));
+    }
+}
+
+fn tick(shared: &Arc<Shared>) {
+    let policy = plan::StopPolicy {
+        now_ms: now_ms(),
+        assigned_jobs: shared.assigned_jobs.load(Ordering::Relaxed),
+        idle_timeout_ms: (shared.config.idle_timeout_secs * 1000) as i64,
+        completion_grace_ms: (shared.config.completion_grace_secs * 1000) as i64,
+    };
+    let live = shared.live();
+    for (job_id, reason) in plan::stops(&policy, &live) {
+        let Some(machine) = live.iter().find(|job| job.id == job_id).and_then(|job| job.machine.clone()) else {
+            continue;
         };
-        audit(
-            &self.audit_log,
-            &format!(
-                "DEMAND job={key} attempt={attempt_id} host={host_id} labels={}",
-                labels.join(",")
-            ),
-        );
-        self.runtime.jobs.insert(key.to_owned(), job);
-        self.persist_runtime();
+        let first = shared
+            .stopping
+            .lock()
+            .map(|mut stopping| stopping.insert(job_id))
+            .unwrap_or(true);
+        if !first {
+            continue;
+        }
+        let status = shared
+            .host_command(None)
+            .args(["stop", "--name", &machine])
+            .stdout(Stdio::null())
+            .status();
+        shared.audit(&format!(
+            "STOP job={job_id} machine={machine} reason={} ok={}",
+            reason.as_str(),
+            status.is_ok_and(|status| status.success())
+        ));
     }
+    if shared.reservation_pending.load(Ordering::Relaxed) {
+        if let Err(error) = scale(shared) {
+            shared.audit(&format!("SCALE_FAILED error={error}"));
+        }
+    }
+}
 
-    fn next_attempt_id(&self) -> i64 {
-        let base = now_ms() as i64;
-        self.runtime
-            .jobs
-            .values()
-            .map(|job| job.execution_attempt_id)
-            .max()
-            .unwrap_or(0)
-            .max(base)
-            + 1
+fn run_ticks(shared: Arc<Shared>) {
+    thread::spawn(move || {
+        loop {
+            {
+                let (flag, signal) = &shared.wake;
+                if let Ok(woken) = flag.lock() {
+                    if let Ok((mut woken, _)) = signal.wait_timeout(woken, Duration::from_secs(1)) {
+                        *woken = false;
+                    }
+                }
+            }
+            tick(&shared);
+        }
+    });
+}
+
+fn recover(shared: &Arc<Shared>) {
+    for job in shared.live() {
+        execution::spawn(shared.clone(), job.id, true);
+    }
+}
+
+fn parse_args(args: &[String]) -> Result<PathBuf, String> {
+    match args {
+        [flag, path] if flag == "--pilot" => Ok(PathBuf::from(path)),
+        _ => Err("usage: smolrunners serve --pilot CONFIG.toml".to_owned()),
     }
 }
 
 pub fn serve(args: &[String]) -> Result<(), String> {
-    let config = parse_args(args)?;
-    let listen = config.listen.clone();
-    let api_state = config.state_dir.join("api");
+    let config = PilotConfig::load(&parse_args(args)?)?;
+    let listen = config.listen.to_string();
+    let shared = open(config)?;
+    shared.audit(&format!("BOOT host={} listen={listen}", shared.config.host.key));
+    let api_state = shared.state.clone();
+    let api_listen = listen.clone();
+    let api_shared = shared.clone();
     thread::spawn(move || {
-        let api_args = vec![
-            "--listen".to_owned(),
-            listen,
-            "--state-dir".to_owned(),
-            api_state.display().to_string(),
-        ];
-        let _ = crate::api::serve(&api_args);
+        if let Err(error) = crate::api::serve_state(&api_listen, api_state, None) {
+            api_shared.audit(&format!("API_FAILED error={error}"));
+            std::process::exit(1);
+        }
     });
-    let mut supervisor = Supervisor::new(config)?;
-    supervisor.run()
+    recover(&shared);
+    run_ticks(shared.clone());
+    supervise_adapter(&shared);
+    loop {
+        thread::park();
+    }
 }

@@ -119,7 +119,7 @@ pub struct CacheRecord {
     pub created_at_ms: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct JobRecord {
     pub id: i64,
     pub execution_attempt_id: i64,
@@ -147,6 +147,52 @@ pub struct JobRecord {
     pub result: Option<String>,
     pub admission_reason: String,
     pub github_url: Option<String>,
+    #[serde(default)]
+    pub runner_name: Option<String>,
+    #[serde(default)]
+    pub runner_id: Option<i64>,
+    #[serde(default)]
+    pub machine: Option<String>,
+    #[serde(default)]
+    pub reservation_sequence: Option<u64>,
+    #[serde(default)]
+    pub limits: Option<EffectiveLimits>,
+    #[serde(default)]
+    pub cancel_requested: bool,
+    #[serde(default)]
+    pub github_result: Option<String>,
+    #[serde(default)]
+    pub github_completed_at_ms: Option<i64>,
+    #[serde(default)]
+    pub runner_exit: Option<String>,
+    #[serde(default)]
+    pub idle_since_ms: Option<i64>,
+}
+
+/// Limits fixed when an execution is created: the guest shape and the host cgroup allowance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectiveLimits {
+    pub guest_vcpu: u16,
+    pub guest_memory_gib: u32,
+    pub storage_gib: u32,
+    pub host_cpu_max: String,
+    pub host_memory_max_bytes: u64,
+    pub host_pids_max: u32,
+}
+
+pub const TERMINAL_JOB_STATES: [&str; 3] = ["done", "failed", "cancelled"];
+
+pub fn is_terminal(state: &str) -> bool {
+    TERMINAL_JOB_STATES.contains(&state)
+}
+
+pub struct NewExecution {
+    pub profile: String,
+    pub labels: Vec<String>,
+    pub host_id: i64,
+    pub limits: EffectiveLimits,
+    pub reservation_sequence: Option<u64>,
+    pub runner_name_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -615,6 +661,128 @@ impl State {
         self.data.jobs.iter_mut().find(|job| job.id == id)
     }
 
+    pub fn create_execution(&mut self, spec: NewExecution, now_ms: i64) -> Result<JobRecord, String> {
+        let id = self.next_id();
+        let execution_attempt_id = self.next_id();
+        let runner_name = format!("{}-{execution_attempt_id}", spec.runner_name_prefix);
+        let job = JobRecord {
+            id,
+            execution_attempt_id,
+            protocol_job_id: String::new(),
+            request_id: 0,
+            job_key: runner_name.clone(),
+            name: runner_name.clone(),
+            profile: spec.profile,
+            profile_revision_id: String::new(),
+            allocated_vcpu: spec.limits.guest_vcpu,
+            allocated_memory_gib: spec.limits.guest_memory_gib,
+            profile_arch: String::new(),
+            profile_image: String::new(),
+            state: "provisioning".to_owned(),
+            host_id: Some(spec.host_id),
+            labels: spec.labels,
+            demand_at_ms: now_ms,
+            start_at_ms: None,
+            finish_at_ms: None,
+            result: None,
+            admission_reason: "runner started for an assigned job".to_owned(),
+            github_url: None,
+            runner_name: Some(runner_name),
+            runner_id: None,
+            machine: None,
+            reservation_sequence: spec.reservation_sequence,
+            limits: Some(spec.limits),
+            cancel_requested: false,
+            github_result: None,
+            github_completed_at_ms: None,
+            runner_exit: None,
+            idle_since_ms: None,
+        };
+        self.data.jobs.push(job.clone());
+        self.persist()?;
+        Ok(job)
+    }
+
+    pub fn update_job<R>(&mut self, id: i64, change: impl FnOnce(&mut JobRecord) -> R) -> Result<R, String> {
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        let result = change(job);
+        self.persist()?;
+        Ok(result)
+    }
+
+    pub fn job_by_runner(&self, runner_name: &str) -> Option<&JobRecord> {
+        self.data
+            .jobs
+            .iter()
+            .find(|job| job.runner_name.as_deref() == Some(runner_name))
+    }
+
+    pub fn live_jobs(&self) -> Vec<JobRecord> {
+        self.data
+            .jobs
+            .iter()
+            .filter(|job| job.runner_name.is_some() && !is_terminal(&job.state))
+            .cloned()
+            .collect()
+    }
+
+    pub fn request_cancel(&mut self, id: i64) -> Result<JobRecord, String> {
+        let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
+        if is_terminal(&job.state) {
+            return Err(format!("job {id} is already {}", job.state));
+        }
+        if job.runner_name.is_none() {
+            return Err(format!("job {id} has no coordinator execution to cancel"));
+        }
+        job.cancel_requested = true;
+        let result = job.clone();
+        self.persist()?;
+        Ok(result)
+    }
+
+    pub fn ensure_local_host(
+        &mut self,
+        host_key: &str,
+        arch: &str,
+        total_vcpu: u16,
+        total_memory_gib: u32,
+        now_ms: i64,
+    ) -> Result<i64, String> {
+        if let Some(host) = self.data.hosts.iter_mut().find(|host| host.host_key == host_key) {
+            host.arch = arch.to_owned();
+            host.total_vcpu = total_vcpu;
+            host.total_memory_gib = total_memory_gib;
+            host.last_contact_ms = Some(now_ms);
+            let id = host.id;
+            self.persist()?;
+            return Ok(id);
+        }
+        let id = self.next_id();
+        self.data.hosts.push(HostRecord {
+            id,
+            host_key: host_key.to_owned(),
+            hostname: host_key.to_owned(),
+            arch: arch.to_owned(),
+            total_vcpu,
+            total_memory_gib,
+            used_vcpu: 0,
+            used_memory_gib: 0,
+            admission_state: "eligible".to_owned(),
+            incarnation: 1,
+            capabilities: Vec::new(),
+            key_fingerprint: String::new(),
+            cert_fingerprint: String::new(),
+            mtls: false,
+            certificate_declared: false,
+            transport: "local".to_owned(),
+            drain_revision: 0,
+            revoked: false,
+            last_contact_ms: Some(now_ms),
+        });
+        self.persist()?;
+        Ok(id)
+    }
+
     pub fn record_demand(
         &mut self,
         protocol_job_id: &str,
@@ -659,6 +827,16 @@ impl State {
             result: None,
             admission_reason: "profile matched advertised labels".to_owned(),
             github_url: None,
+            runner_name: None,
+            runner_id: None,
+            machine: None,
+            reservation_sequence: None,
+            limits: None,
+            cancel_requested: false,
+            github_result: None,
+            github_completed_at_ms: None,
+            runner_exit: None,
+            idle_since_ms: None,
         };
         self.data.jobs.push(job.clone());
         self.persist()?;
@@ -696,6 +874,58 @@ impl State {
         let job = self.job_mut(id).ok_or_else(|| "job_not_found".to_owned())?;
         job.github_url = Some(url.to_owned());
         self.persist()
+    }
+
+    /// Creates the rows telemetry samples reference for one coordinator execution. Workflow
+    /// identity is unknown until GitHub reports it, so executions share one unattributed run.
+    pub fn register_execution(
+        &self,
+        execution_attempt_id: i64,
+        runner_name: &str,
+        host_id: i64,
+        host_key: &str,
+        arch: &str,
+    ) -> Result<(), String> {
+        let connection = smolrunners_core::store::open_connection(&self.db_path)
+            .map_err(|error| format!("open context connection: {error}"))?;
+        connection
+            .execute_batch(
+                "INSERT OR IGNORE INTO github_installation
+                    (id, installation_id, app_id, account_login, scope,
+                     runner_group_id, runner_group_name, created_at, updated_at)
+                 VALUES (1, 0, 0, 'unattributed', 'coordinator', 0, 'coordinator', 'now', 'now');
+                 INSERT OR IGNORE INTO workflow_run
+                    (id, installation_id, repository, workflow_name, workflow_run_id, head_branch, created_at)
+                 VALUES (1, 1, 'unattributed', 'unattributed', 0, '', 'now');
+                 INSERT OR IGNORE INTO workflow_run_attempt (id, workflow_run_id, attempt, created_at)
+                 VALUES (1, 1, 1, 'now');",
+            )
+            .map_err(|error| format!("register execution context: {error}"))?;
+        let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
+        let (runner, key, arch) = (quote(runner_name), quote(host_key), quote(arch));
+        connection
+            .execute_batch(&format!(
+                "INSERT OR IGNORE INTO job (id, workflow_run_attempt_id, github_job_key, name, created_at)
+                 VALUES ({execution_attempt_id}, 1, {runner}, {runner}, 'now');
+                 INSERT OR IGNORE INTO execution_attempt (id, job_id, attempt, state, started_at)
+                 VALUES ({execution_attempt_id}, {execution_attempt_id}, 1, 'busy', 'now');
+                 INSERT OR IGNORE INTO host
+                    (id, host_key, incarnation, hostname, arch, total_vcpu, total_memory_gib,
+                     total_disk_bytes, capabilities_json, admission_state, created_at)
+                 VALUES ({host_id}, {key}, 1, {key}, {arch}, 0, 0, 0, '{{}}', 'eligible', 'now');"
+            ))
+            .map_err(|error| format!("register execution: {error}"))?;
+        let present: i64 = connection
+            .query_row(
+                &format!("SELECT COUNT(*) FROM execution_attempt WHERE id = {execution_attempt_id}"),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("check execution context: {error}"))?;
+        if present != 1 {
+            return Err(format!("execution {execution_attempt_id} context was not recorded"));
+        }
+        Ok(())
     }
 
     pub fn seed_context(&self, execution_attempt_id: i64, host_id: i64) -> Result<(), String> {

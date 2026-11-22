@@ -202,6 +202,7 @@ fn command_name(method: &str, path: &str) -> String {
         ("demand", _, _) => "jobs demand".to_owned(),
         ("jobs", Some(id), Some("start")) => format!("jobs start {id}"),
         ("jobs", Some(id), Some("complete")) => format!("jobs complete {id}"),
+        ("jobs", Some(id), Some("cancel")) => format!("jobs cancel {id}"),
         ("jobs", Some(id), Some("github")) => format!("jobs github {id}"),
         ("jobs", Some(id), Some("metrics")) => format!("jobs metrics {id}"),
         ("jobs", Some(id), Some("explain")) => format!("jobs explain {id}"),
@@ -675,6 +676,13 @@ fn dispatch(
                             Ok(ApiReply::new(200, command, serde_json::to_value(&job).unwrap())
                                 .with_scope(json!({ "kind": "job", "id": id })))
                         }
+                        Some("cancel") => {
+                            let job = state
+                                .request_cancel(id)
+                                .map_err(|error| (409, "cancel_refused", error))?;
+                            Ok(ApiReply::new(200, command, serde_json::to_value(&job).unwrap())
+                                .with_scope(json!({ "kind": "job", "id": id })))
+                        }
                         Some("github") => {
                             let url = body["url"].as_str().unwrap_or("https://github.com/fixture/fixture/actions/runs/1");
                             state.attach_github(id, url).map_err(|error| (404, "job_not_found", error))?;
@@ -835,6 +843,7 @@ mod tests {
             result: Some("success".to_owned()),
             admission_reason: "ok".to_owned(),
             github_url: None,
+            ..JobRecord::default()
         });
         state.seed_context(1, 1).expect("seed context");
     }
@@ -982,6 +991,22 @@ mod tests {
         assert_eq!(reply.status, 200);
         assert_eq!(reply.data["mtls"], false);
         assert_eq!(reply.data["transport"], "plain-http");
+    }
+
+    #[test]
+    fn every_coordinator_execution_can_store_its_own_samples() {
+        let (_dir, mut state) = test_state();
+        for attempt in [2, 4, 6] {
+            state
+                .register_execution(attempt, &format!("smol-host-{attempt}"), 1, "host-a", "arm64")
+                .expect("register execution");
+            for sequence in 1..=3 {
+                state.ingest_sample(sample(sequence, true), attempt, Some(1)).expect("ingest");
+            }
+        }
+        for attempt in [2, 4, 6] {
+            assert_eq!(state.metric_rows(attempt).expect("rows").len(), 9, "attempt {attempt}");
+        }
     }
 
     #[test]

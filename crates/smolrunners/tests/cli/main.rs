@@ -465,13 +465,20 @@ fn cli_jobs_metrics_follow_json_has_units_and_explicit_gaps() {
         .route("GET", "/api/v1/jobs", jobs_reply)
         .route("GET", "/api/v1/jobs/5", ApiReply::new(200, "jobs inspect", json!({ "state": "done" })))
         .route("GET", "/api/v1/jobs/5/metrics", metrics_reply);
-    let args: Vec<String> = ["smolrunners", "jobs", "metrics", "--follow", "--json"]
-        .iter()
-        .map(|value| (*value).to_owned())
-        .collect();
-    let output = execute(&args, &transport).expect("metrics");
+    let mut streamed = Vec::new();
+    let output = smolrunners::cli::follow_metrics_to(
+        &transport,
+        "5",
+        true,
+        None,
+        std::time::Duration::ZERO,
+        &mut streamed,
+    )
+    .expect("metrics");
     assert_eq!(output.exit, 0, "stderr: {}", output.stderr);
-    let actual: Value = serde_json::from_str(&output.stdout).expect("json");
+    let streamed = String::from_utf8(streamed).expect("utf8");
+    assert_eq!(streamed.lines().count(), 1, "one JSON line per poll: {streamed}");
+    let actual: Value = serde_json::from_str(streamed.lines().next().expect("line")).expect("json");
     assert_eq!(actual["schema_version"], 1);
     assert_eq!(actual["command"], "jobs metrics 5");
     assert_eq!(actual["units"]["cpu_cores"], "cores");

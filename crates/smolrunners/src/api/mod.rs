@@ -12,8 +12,8 @@ pub use http::{
 };
 pub use schema::{API_SCHEMA_VERSION, ApiReply, JsonOutput};
 pub use state::{
-    CacheRecord, HostRecord, ImageRecord, Installation, Invitation, JobRecord, ProfileRecord, State,
-    StateData,
+    CacheRecord, EffectiveLimits, HostRecord, ImageRecord, Installation, Invitation, JobRecord,
+    NewExecution, ProfileRecord, State, StateData, is_terminal,
 };
 pub use tls::{ClientTls, Identity, IdentityKind, Peer, client_config, server_config};
 pub use routes::route;
@@ -71,6 +71,15 @@ pub fn serve(args: &[String]) -> Result<(), String> {
     let transport = if tls.is_some() { "mtls" } else { "plain-http" };
 
     let state = Arc::new(Mutex::new(State::open(&state_dir)?));
+    eprintln!("smolrunners api listening on {listen} transport={transport}");
+    serve_state(&listen, state, tls)
+}
+
+pub fn serve_state(
+    listen: &str,
+    state: Arc<Mutex<State>>,
+    tls: Option<Arc<rustls::ServerConfig>>,
+) -> Result<(), String> {
     let handler = Arc::new(move |request: &Request| {
         let reply = route(request, &state);
         let status = reply.status;
@@ -79,6 +88,5 @@ pub fn serve(args: &[String]) -> Result<(), String> {
         });
         Response::json(status, body)
     });
-    eprintln!("smolrunners api listening on {listen} transport={transport}");
-    http::serve(&listen, handler, tls)
+    http::serve(listen, handler, tls)
 }
