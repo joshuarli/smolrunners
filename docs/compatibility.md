@@ -19,8 +19,8 @@ gaps already established from pinned inputs and local evidence are:
 
 | Gap | Local evidence | Remedy | Status |
 | --- | --- | --- | --- |
-| The pinned official runner targets .NET 8, retired 2026-11-10. | `docs/upstream-evidence.md` records the target for `runner-linux-arm64`; upstream PR #4757 moves it to .NET 10 and is open. | Retarget and qualify a pinned .NET 10 runner. | Local musl build measured under D13; native execution parked. |
-| Native Alpine runner needs musl C++ runtime, ICU and musl Node inputs. | `Native Alpine executor (D13)` below. | Parent pins the Alpine package closure and a musl Node build, then L2 retries. | Parked. |
+| The pinned official runner targets .NET 8, retired 2026-11-10. | `docs/upstream-evidence.md` records the target for `runner-linux-arm64`; upstream PR #4757 moves it to .NET 10 and is open. | Retarget and qualify a pinned .NET 10 runner. | Local `net10.0` `linux-musl-arm64` runner runs natively on Alpine (L2); live corpus is NE1. |
+| Native Alpine runner needs musl C++ runtime, ICU and musl Node inputs. | `Native Alpine executor (D13)` below. | Parent pins the Alpine package closure and a musl Node build, then L2 retries. | Pinned and installed; the local native smoke passes (L2). |
 | Debian-versus-Ubuntu system package and toolchain differences in real workflows. | No local corpus; the fixture workloads run on pinned Debian 13. | Owner runs the live corpus and records per-workflow deltas. | NE1. |
 | x86_64 image and runner behavior. | Pinned x86_64 inputs are fetched but unqualified locally. | Native x86_64 host qualification. | NE2. |
 | Full Docker networking and overlayfs parity in the Alpine container path. | `image_alpine.sh` proves boot, collection and a simple container with `vfs` and iptables disabled. | Separate DinD/network parity evidence. | Local gap. |
@@ -33,53 +33,39 @@ and OTLP/Prometheus export.
 The official runner v2.338.2 targets .NET 8, which went out of support on 2026-11-10. The .NET 10
 change is upstream PR #4757 and is still open; the bundled target is recorded in job history.
 
-## Native Alpine executor (D13): parked after the L2 spike
+## Native Alpine executor (D13): local smoke passes, corpus remains NE1
 
-The D13 native-executor spike was attempted and exceeded its bound; per D13 the reversal is
-recorded here and native-Alpine executor completion is parked. The Alpine 3.24 image and its
-static collector stay. Native `smol-alpine…` labels remain unadvertised, and the interim
-Alpine-container-under-Debian path stays on NE2.
+The first D13 spike published a musl-linked `Runner.Listener` but it exited 127 for lack of
+`libstdc++.so.6`, `libgcc_s.so.1` and ICU, and no pinned musl Node was available. The parent
+then pinned the complete Alpine closure: `alpine-libgcc-aarch64`,
+`alpine-libstdcxx-aarch64`, `alpine-icu-libs-aarch64`, `alpine-icu-data-en-aarch64`, and the
+Alpine `nodejs` 24.22.3 apk plus its 13 shared-library and certificate dependencies; all are
+justified in `docs/upstream-evidence.md`. nodejs.org publishes no `linux-arm64-musl` build
+for the pinned Node 22.23.5, so the musl Node comes from Alpine's package. The retry adds one
+further pin, `runner-src-musl-arm64` (SHA-256
+`a0fa836ec067173a6de1d5afc1ae7c9f5e23cd576884385d6d020c7a529c6e5e`, 16,015,837 B), for the
+runner source at the v2.338.2 commit `d1eb12d4b115c301201de27d667284e1a80f2ab5`.
 
-What was measured, on the nested Debian 13 arm64 host with the pinned inputs:
+`images/alpine324/install-runtime.sh` extracts the apks into the rootfs before the offline
+inner guest boots. `images/alpine324/build-runner.sh` fetches the pinned .NET SDK 10.0.404
+and pinned runner source, retargets `net8.0` to `net10.0`, adds the `linux-musl-arm64` RID,
+disables `TreatWarningsAsErrors` (NU1510 on .NET 10), writes deterministic `BuildConstants`
+for version 2.338.2, and publishes `Runner.Listener`, `Runner.Worker` and
+`Runner.PluginHost` with `-r linux-musl-arm64 --self-contained true`. The SDK runs with
+`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` because the minimal nested Debian build host has
+no ICU; that affects only the build process, not the published apphosts or the guest.
 
-- The upstream source at the v2.338.2 commit `d1eb12d4b115c301201de27d667284e1a80f2ab5`,
-  retargeted from `net8.0` to `net10.0` and given the `linux-musl-arm64` RID, builds with the
-  pinned .NET SDK 10.0.404 (`dotnet-sdk-linux-arm64`). `dotnet publish -r linux-musl-arm64
-  --self-contained true` exits 0 and produces a `Runner.Listener` apphost. Retargeting needed
-  `TreatWarningsAsErrors=false` because .NET 10 raises NU1510 for packages the runner still
-  references; the first publish failed on that warning before the second succeeded.
-- The published apphost is genuinely musl-linked: inside a guest booted from the pinned
-  Alpine 3.24.4 rootfs, `ldd` reports `/lib/ld-musl-aarch64.so.1` and
-  `libc.musl-aarch64.so.1` and no glibc loader.
-- It does not run natively: `Runner.Listener --version` exits 127 with
-  `Error loading shared library libstdc++.so.6` and `libgcc_s.so.1`. Those musl C++ runtime
-  libraries, and ICU for globalization, are absent from the pinned Alpine base rootfs. Inner
-  guests have no network (`apk update` → `DNS: transient error`, no route), so `apk add
-  libstdc++ libgcc icu-libs` fails (exit nonzero). Baking them in requires new Alpine `.apk`
-  HTTPS downloads, which are not in `sources.lock.json`; D6 requires every image-build
-  archive to be pinned there and L2 may not edit that file.
-- No pinned musl Node exists. The only pinned Node inputs (`node-linux-arm64`,
-  `node-linux-x64`) are the official nodejs.org glibc builds; their binary contains
-  `ld-linux-aarch64.so.1` and `GLIBC_2.x` and does not execute on Alpine. Supplying
-  "musl Node where host steps select it" needs either a new pinned musl Node input or
-  Alpine's `nodejs` package, both unpinned inputs outside L2's authority.
+`make test-vm T=alpine_runner` is now a real gate. On 2026-11-22 it exited 0 and showed:
 
-The bound was 3 attempts and one working session of build effort. Two publish attempts were
-used (one failed on NU1510, one succeeded) plus runtime probes; the remaining work required
-unpinned inputs L2 cannot add, so the spike was stopped at the bound rather than grinding
-past it. No `linux-musl-x64` artifact is shipped; it is parked with the spike.
+- `Runner.Listener --version` prints `2.338.2` and exits 0 natively in the Alpine guest.
+- `ldd` on `Runner.Listener`, `Runner.Worker`, `Runner.PluginHost` and the musl Node path
+  reports `/lib/ld-musl-aarch64.so.1`, with no glibc loader or `GLIBC_` symbols.
+- `Runner.Worker` reaches managed argument validation (exit 1, no loader error).
+- Node `v24.22.3` from `/opt/runner/externals/node24/bin/node` executes a JS action
+  entrypoint fixture and prints the expected marker.
 
-Retry condition: the parent adds SHA-256/size pins to `sources.lock.json` for a musl Node
-binary and for the musl C++ runtime and ICU libraries (or upstream produces a runner build
-with no such host dependencies), then L2 rebuilds and qualifies both `linux-musl-arm64` and
-the cross-published `linux-musl-x64` output.
-
-Progress (2026-11-22): all inputs for the retry are pinned and verified through
-`fetch-inputs.py` — the C++/ICU closure (`alpine-libgcc-aarch64`,
-`alpine-libstdcxx-aarch64`, `alpine-icu-libs-aarch64`, `alpine-icu-data-en-aarch64`) and the
-Alpine `nodejs` apk closure (`alpine-nodejs-aarch64` plus its 13 shared-library and
-certificate dependencies), justified in `docs/upstream-evidence.md`. nodejs.org publishes no
-`linux-arm64-musl` build for pinned Node 22.23.5, so the musl Node comes from Alpine's `nodejs`
-24.22.3 package. The remaining work is a reproducible rootfs recipe that extracts these apks
-before the offline inner guest starts, then the L2 build and qualification. L2 stays parked
-until that recipe and its smoke check exist.
+No library remains missing. This is a packaging and runtime smoke, not native-Alpine
+qualification: no runner registration, job, or JS action through a live host step was run
+(O1). Native `smol-alpine…` labels stay unadvertised until NE1 passes the live Alpine corpus,
+and the interim Alpine-container-under-Debian path stays on NE2. The cross-published
+`linux-musl-x64` artifact is not built or shipped locally; it stays on NE2.

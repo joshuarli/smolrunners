@@ -57,6 +57,17 @@
       "purpose": "official guest executor for x64 product images (NE2)"
     },
     {
+      "name": "runner-src-musl-arm64",
+      "version": "2.338.2-d1eb12d4b115c301201de27d667284e1a80f2ab5",
+      "url": "https://codeload.github.com/actions/runner/tar.gz/d1eb12d4b115c301201de27d667284e1a80f2ab5",
+      "sha256": "a0fa836ec067173a6de1d5afc1ae7c9f5e23cd576884385d6d020c7a529c6e5e",
+      "size": 16015837,
+      "target": "aarch64-unknown-linux-musl",
+      "role": "sdk",
+      "license": "MIT",
+      "purpose": "pinned actions/runner source retargeted to net10.0 for the native Alpine runner (L2)"
+    },
+    {
       "name": "go-linux-arm64",
       "version": "1.27.3",
       "url": "https://go.dev/dl/go1.27.3.linux-arm64.tar.gz",
