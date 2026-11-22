@@ -6,11 +6,12 @@ cap=${2:-20000}
 overflow="$spool.overflow"
 total=0
 reported=0
+malformed=0
 
 while IFS= read -r line; do
   case "$line" in
     \{*) ;;
-    *) continue ;;
+    *) malformed=$((malformed + 1)); continue ;;
   esac
   printf '%s\n' "$line" >> "$spool"
   total=$((total + 1))
@@ -23,3 +24,4 @@ while IFS= read -r line; do
     fi
   fi
 done
+printf '%s\n' "$malformed" > "$spool.malformed"

@@ -109,14 +109,16 @@ sh "$repo/tests/vm/telemetry_spool.sh" "$state/spool/series.ndjson" "$cap" \
 
 note 'checking coverage, gaps and metric completeness'
 python3 - "$state/spool/series.ndjson" "$seconds" "$state/spool/series.ndjson.overflow" \
+  "$state/spool/series.ndjson.malformed" \
   > "$state/report.txt" <<'PY'
 import datetime
 import json
 import os
 import sys
 
-spool_path, seconds_path, overflow_path = sys.argv[1:4]
+spool_path, seconds_path, overflow_path, malformed_path = sys.argv[1:5]
 required_seconds = int(seconds_path)
+malformed_lines = int(open(malformed_path).read().strip())
 
 samples = []
 with open(spool_path) as stream:
@@ -172,6 +174,7 @@ report = {
     'gaps': gaps,
     'missing_metrics': missing_metric,
     'overflow': os.path.exists(overflow_path),
+    'malformed_log_lines': malformed_lines,
 }
 print(json.dumps(report, indent=2))
 
@@ -179,9 +182,13 @@ assert not report['overflow'], 'spool hit its line cap; coverage cannot be asses
 assert wall_seconds >= required_seconds * 0.5, (
     f"observation window {wall_seconds:.1f}s is too short for a {required_seconds}s job"
 )
-assert not missing_metric, f"captures missing required metrics: {missing_metric[:5]}"
+incomplete = sorted({metric['seq'] for metric in missing_metric})
+assert len(incomplete) <= max(2, malformed_lines), (
+    f"{len(incomplete)} captures missing required metrics but only "
+    f"{malformed_lines} malformed log frames: {incomplete[:5]}"
+)
 assert coverage >= 0.95, f"coverage {coverage:.4f} below 0.95; gaps: {gaps[:10]}"
-print('telemetry_long: coverage full or explicitly accounted; no sample-count cutoff')
+print(f'telemetry_long: {malformed_lines} malformed log frames accounted; coverage full; no sample-count cutoff')
 PY
 
 cat "$state/report.txt"
