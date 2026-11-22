@@ -35,6 +35,12 @@ pub struct Marker {
     pub execution_id: Option<i64>,
     #[serde(default)]
     pub storage_gib: Option<u32>,
+    #[serde(default)]
+    pub cpu_max: String,
+    #[serde(default)]
+    pub memory_max: String,
+    #[serde(default)]
+    pub pids_max: String,
 }
 
 fn default_net_allow() -> String {

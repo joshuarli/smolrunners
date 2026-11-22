@@ -177,8 +177,10 @@ marker = markers[0]
 assert marker.get('reservation_id'), marker
 assert marker.get('execution_id'), marker
 assert marker.get('storage_gib'), marker
-print('connected_job: marker carries reservation=%s execution=%s storage=%sGiB' % (
-    marker['reservation_id'], marker['execution_id'], marker['storage_gib']))
+assert marker.get('cpu_max') and marker.get('memory_max') and marker.get('pids_max'), marker
+print('connected_job: marker carries reservation=%s execution=%s storage=%sGiB limits=%s/%s/%s' % (
+    marker['reservation_id'], marker['execution_id'], marker['storage_gib'],
+    marker['cpu_max'], marker['memory_max'], marker['pids_max']))
 PY" || fail 'the host marker does not carry the execution identity'
 wait_for 'TELEMETRY attempt=' 60 || fail 'no live telemetry during execution'
 first=$(samples)

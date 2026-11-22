@@ -149,9 +149,9 @@ fn wait_for_vmm(cgroup: &str) -> Option<u32> {
 fn boundary_input(config: &Config, marker: &Marker) -> BoundaryInput {
     BoundaryInput {
         uid: marker.uid,
-        cpu_max: config.cpu_max.clone(),
-        memory_max: config.memory_max.clone(),
-        pids_max: config.pids_max.clone(),
+        cpu_max: if marker.cpu_max.is_empty() { config.cpu_max.clone() } else { marker.cpu_max.clone() },
+        memory_max: if marker.memory_max.is_empty() { config.memory_max.clone() } else { marker.memory_max.clone() },
+        pids_max: if marker.pids_max.is_empty() { config.pids_max.clone() } else { marker.pids_max.clone() },
         net_allow: config.net_allow.clone(),
         net_mode: config.net_mode(),
         machine: marker.machine.clone(),
@@ -234,6 +234,9 @@ pub fn provision(
         reservation_id,
         execution_id,
         storage_gib: Some(storage),
+        cpu_max: config.cpu_max.clone(),
+        memory_max: config.memory_max.clone(),
+        pids_max: config.pids_max.clone(),
     };
 
     marker::write(&config.state, &marker)
@@ -382,6 +385,9 @@ mod tests {
             reservation_id: None,
             execution_id: None,
             storage_gib: None,
+            cpu_max: String::new(),
+            memory_max: String::new(),
+            pids_max: String::new(),
         }
     }
 
