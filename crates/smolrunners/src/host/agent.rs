@@ -215,6 +215,19 @@ pub fn provision(
         println!("REAPED {machine}");
     }
 
+    let job_key = execution_id
+        .map(|value| format!("exec-{value}"))
+        .unwrap_or_else(|| role.to_owned());
+    let storage_bytes = u64::from(storage).saturating_mul(1024 * 1024 * 1024);
+    let admission = crate::host::storage::admit(config, &job_key, storage_bytes, 1_024)?;
+    if !admission.admitted {
+        return Err(format!("storage admission refused: {}", admission.reason.unwrap_or_default()));
+    }
+    println!(
+        "ADMITTED job={job_key} bytes={} charge={}",
+        storage_bytes, admission.charge_bytes
+    );
+
     let id = incarnation();
     let machine = machine_name(&id, role);
     let cgroup = format!("/sys/fs/cgroup/{machine}");
