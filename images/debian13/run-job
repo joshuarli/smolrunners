@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+[ "$#" -eq 1 ] || { printf 'run-job: expected JIT_FILE\n' >&2; exit 2; }
+jit=$(cat -- "$1")
+rm -- "$1"
+if [ -x /usr/local/bin/dockerd ]; then
+  /usr/local/bin/dockerd --data-root /var/lib/docker &
+  daemon=$!
+  seconds=0
+  while [ ! -S /var/run/docker.sock ]; do
+    if ! kill -0 "$daemon" 2>/dev/null || [ "$seconds" -ge 30 ]; then
+      printf 'run-job: dockerd did not create /var/run/docker.sock within 30 seconds\n' >&2
+      exit 1
+    fi
+    sleep 1
+    seconds=$((seconds + 1))
+  done
+fi
+cd /opt/runner
+export RUNNER_ALLOW_RUNASROOT=1
+ACTIONS_RUNNER_INPUT_JITCONFIG=$jit
+export ACTIONS_RUNNER_INPUT_JITCONFIG
+exec ./run.sh

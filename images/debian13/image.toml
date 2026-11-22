@@ -1,5 +1,5 @@
 name = "debian13"
-arch = "arm64"
+arch = ["arm64", "amd64"]
 recipe = "build.sh"
 
 [base]
@@ -11,12 +11,21 @@ release = "13"
 snapshot = "20261104T212339Z"
 packages = ["libicu76"]
 
-[inputs]
+[inputs.arm64]
 runner = "runner-linux-arm64"
 docker = "docker-static-aarch64"
 buildx = "buildx-linux-arm64"
 node = "node-linux-arm64"
+compose = "compose-linux-arm64"
 collector = "tests/vm/bin/smolrunners-collector"
+
+[inputs.amd64]
+runner = "runner-linux-x64"
+docker = "docker-static-x86_64"
+buildx = "buildx-linux-amd64"
+compose = "compose-linux-x64"
+node = "node-linux-x64"
+collector = "SMOLRUNNERS_COLLECTOR"
 
 [layout]
 runner_dir = "/opt/runner"

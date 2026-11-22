@@ -1,6 +1,16 @@
 #!/bin/sh
 set -eu
 
+case ${ARCH:-$(uname -m)} in
+  aarch64|arm64) arch=aarch64; platform=arm64; runner=runner-linux-arm64; docker=docker-static-aarch64; buildx=buildx-linux-arm64; compose=compose-linux-arm64; node=node-linux-arm64 ;;
+  x86_64|amd64) arch=x86_64; platform=amd64; runner=runner-linux-x64; docker=docker-static-x86_64; buildx=buildx-linux-amd64; compose=compose-linux-x64; node=node-linux-x64 ;;
+  *) printf 'image build: unsupported architecture: %s\n' "${ARCH:-$(uname -m)}" >&2; exit 2 ;;
+esac
+libdir="$arch-linux-gnu"
+if [ "${SMOLRUNNERS_PRINT_ARCH:-}" = 1 ]; then
+  printf 'platform=%s\nrunner=%s\ndocker=%s\nbuildx=%s\ncompose=%s\nnode=%s\nlibdir=%s\n' "$platform" "$runner" "$docker" "$buildx" "$compose" "$node" "$libdir"
+  exit 0
+fi
 rootfs=${1:?usage: build.sh ROOTFS CACHE}
 cache=${2:?usage: build.sh ROOTFS CACHE}
 recipe_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
@@ -42,18 +52,18 @@ pull_base() {
     -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
     "$registry/v2/$repository/manifests/$base_digest" -o "$tmp/index.json"
   verify_digest "$tmp/index.json" "$base_digest"
-  plat_digest=$(python3 - "$tmp/index.json" <<'PY'
+  plat_digest=$(python3 - "$tmp/index.json" "$platform" <<'PY'
 import json
 import sys
 
 index = json.load(open(sys.argv[1]))
 for entry in index["manifests"]:
     platform = entry.get("platform", {})
-    if platform.get("os") == "linux" and platform.get("architecture") == "arm64":
+    if platform.get("os") == "linux" and platform.get("architecture") == sys.argv[2]:
         print(entry["digest"])
         break
 else:
-    raise SystemExit("no linux/arm64 manifest in base index")
+    raise SystemExit(f"no linux/{sys.argv[2]} manifest in base index")
 PY
 )
   curl -fsSL --max-time 120 -H "Authorization: Bearer $token" \
@@ -101,7 +111,7 @@ install_libicu() {
   [ -n "$(find "$debdir" -maxdepth 1 -name 'libicu76_*.deb' -print -quit)" ] || fail 'libicu76 download failed'
   dpkg-deb -x "$debdir"/libicu76_*.deb "$rootfs"
   ldconfig -r "$rootfs"
-  [ -e "$rootfs/usr/lib/aarch64-linux-gnu/libicuuc.so.76" ] || fail 'libicu76 not present in rootfs'
+  [ -e "$rootfs/usr/lib/$libdir/libicuuc.so.76" ] || fail 'libicu76 not present in rootfs'
 }
 
 assert_version() {
@@ -115,11 +125,11 @@ printf 'image build: pulling base rootfs\n'
 pull_base
 
 printf 'image build: fetching pinned inputs\n'
-runner_tgz=$(fetch_input runner-linux-arm64)
-docker_tgz=$(fetch_input docker-static-aarch64)
-buildx_bin=$(fetch_input buildx-linux-arm64)
-compose_bin=$(fetch_input compose-linux-arm64)
-node_xz=$(fetch_input node-linux-arm64)
+runner_tgz=$(fetch_input "$runner")
+docker_tgz=$(fetch_input "$docker")
+buildx_bin=$(fetch_input "$buildx")
+compose_bin=$(fetch_input "$compose")
+node_xz=$(fetch_input "$node")
 
 printf 'image build: installing components\n'
 mkdir -p "$rootfs/opt/runner" "$rootfs/opt/node" \
@@ -147,8 +157,9 @@ node_dir=$(find "$tmp/node" -maxdepth 1 -type d -name 'node-v*' -print -quit)
 [ -n "$node_dir" ] || fail 'node archive lacks a node-v* directory'
 cp -a "$node_dir/." "$rootfs/opt/node/"
 
-collector_path=$(find "$repo" -path '*/tests/vm/bin/smolrunners-collector' -type f -print -quit 2>/dev/null || true)
-if [ -n "$collector_path" ]; then
+collector_path=${SMOLRUNNERS_COLLECTOR:-$repo/tests/vm/bin/smolrunners-collector}
+if [ -n "${SMOLRUNNERS_COLLECTOR:-}" ] && [ ! -f "$collector_path" ]; then fail "collector not found: $collector_path"; fi
+if [ -f "$collector_path" ]; then
   cp "$collector_path" "$rootfs/opt/smolrunners/bin/smolrunners-collector"
   chmod 0755 "$rootfs/opt/smolrunners/bin/smolrunners-collector"
 fi
@@ -164,13 +175,26 @@ EOF
 printf 'image build: installing libicu from the pinned snapshot\n'
 install_libicu
 
+cp "$recipe_dir/run-job" "$rootfs/opt/smolrunners/bin/run-job"
+chmod 0755 "$rootfs/opt/smolrunners/bin/run-job"
 cp "$manifest_src" "$rootfs/opt/smolrunners/manifest.json"
+if [ "$arch" = x86_64 ]; then
+  python3 - "$rootfs/opt/smolrunners/manifest.json" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+data = json.loads(path.read_text())
+data['arch'] = 'amd64'
+path.write_text(json.dumps(data, indent=2) + '\n')
+PYTHON
+fi
 cp "$recipe_dir/verify.sh" "$rootfs/opt/smolrunners/verify.sh"
 chmod 0755 "$rootfs/opt/smolrunners/verify.sh"
 
 printf 'image build: checking installed versions against the manifest\n'
 assert_version runner "$(pin runner)" \
-  "$(LD_LIBRARY_PATH="$rootfs/usr/lib/aarch64-linux-gnu" \
+  "$(LD_LIBRARY_PATH="$rootfs/usr/lib/$libdir" \
     "$rootfs/opt/runner/bin/Runner.Listener" --version 2>&1 | head -1)"
 assert_version docker "$(pin docker)" \
   "$("$rootfs/usr/local/bin/docker" --version | sed -E 's/^Docker version ([0-9.]+).*/\1/')"
