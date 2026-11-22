@@ -94,11 +94,11 @@ fn walk(path: &str, stats: &mut CgroupStats, is_root: bool, budget: &mut usize) 
         stats.memory_events_oom = read_named(format!("{path}/memory.events"), "oom");
         stats.memory_events_oom_kill = read_named(format!("{path}/memory.events"), "oom_kill");
         stats.memory_events_max = read_named(format!("{path}/memory.events"), "max");
-
-        let io_totals = read_keyed_totals(format!("{path}/io.stat"), &["rbytes", "wbytes"]);
-        stats.io_read_bytes = io_totals[0];
-        stats.io_write_bytes = io_totals[1];
     }
+
+    let io_totals = read_keyed_totals(format!("{path}/io.stat"), &["rbytes", "wbytes"]);
+    stats.io_read_bytes = stats.io_read_bytes.saturating_add(io_totals[0]);
+    stats.io_write_bytes = stats.io_write_bytes.saturating_add(io_totals[1]);
 
     if is_root {
         stats.memory_current = read_number(format!("{path}/memory.current"));
@@ -198,7 +198,7 @@ mod tests {
         let stats = workload_stats(root.path().to_str().expect("utf8 path"));
         assert_eq!(stats.cpu_usage_usec, 100);
         assert_eq!(stats.memory_events_oom, 1);
-        assert_eq!(stats.io_read_bytes, 1000);
+        assert_eq!(stats.io_read_bytes, 10_000);
         assert_eq!(stats.descendant_count, 1);
         assert_eq!(stats.memory_current, 1024);
         assert_eq!(stats.memory_anon, 100);
