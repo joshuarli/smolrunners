@@ -1,22 +1,31 @@
-# smolrunners campaign
+# Roadmap
+
+This is the single plan for this repository: all current and future work, and the handoff for resuming it. Campaigns are sections below, and their items interleave in **Sequence**. "Resume the roadmap" means continue from **Status**.
 
 ## Status
 
-- **Goal:** build smolrunners, a self-hosted fleet manager that runs each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical CPU, RAM, storage and lifecycle telemetry. Current slice (PILOT, owner request 2026-11-22): close the gaps that blocked a constrained live pilot on one x86_64 host. `docs/pilot.md` is the runbook.
-- **PILOT delivered (local evidence):**
-  - Real entry point: `serve --pilot CONFIG.toml` supervises the Go adapter, which in `--github-config` mode builds the real `actions/scaleset` client, gets or creates the scale set and opens a session. JIT configs come from `jit_request` commands (`docs/adapter-protocol.md`). The host agent delivers each config over stdin and runs the official runner through `run-job`. `make live-pilot SMOLRUNNERS_PILOT_CONFIG=…` runs it and still exits 2 without a config.
-  - One state: coordinator executions live in the API `State`, so `/api/v1/jobs`, the CLI and the UI show the running execution, its frozen limits and live samples. `jobs metrics --follow` streams one flushed line per poll until a terminal state, with no poll cap. `jobs cancel` is new. The job page polls in every non-terminal state.
-  - Acks never wait for a VM: capacity events reserve and record the execution, then ack. Per-execution workers supervise provisioning, sampling and teardown, release the reservation only after `REMOVED`, then deregister. Restart reattaches from host logs.
-  - One profile drives the guest shape, host `cpu.max`/`memory.max` (`HostAllowance` = shape + VMM overhead, the same cost the ledger reserves), and the displayed limits.
-  - Host authority state is root-only (markers, control, logs, uid claims 0700; root 0711). Per-VM SmolVM state lives under `vms/<machine>`, 0700 and owned by the VM uid.
-  - x86_64: `make pilot-bundle ARCH=x86_64` cross-builds static binaries and verified inputs; `pilot-host-setup.sh` installs them and builds the Debian rootfs on the host.
-- **Bugs found and fixed on the way:** `linux-host.sh sync` never shipped the gitignored rebuilt binaries, so **VM gate records from the history rewrite until 2026-11-22 ran stale binaries**. Other fixes: concurrent provisions shared a VM uid; storage admissions, cgroups and VM dirs leaked past teardown; the ledger reused released reservation ids after reopen; telemetry for every execution after the first failed a foreign key.
-- **Gate:** `make test-vm T=connected_job` now runs inside the nested host and observes only through the API and CLI. A: a successful job; API limits equal the guest cgroup; samples rise while busy; follow streams before completion; `kill -9` of the coordinator leaves the VM running and the same execution resumes sampling; GitHub's result settles it. B: a failed job. C: a CLI cancel. D: the official runner started by `run-job` decodes the fake JIT config. Every phase asserts the VM, cgroup, marker, uid claim, storage admission and JIT file are gone, the reservation was released and the runner was deregistered. A browser on the Mac watched an open job page update live and settle on `cancelled` without reload (manual, agent-browser).
-- **Needs environment:** NE-PILOT, the live pilot itself. On the owner's x86_64 host follow `docs/pilot.md`; this needs a GitHub App key and a disposable private repository. Not proven locally: real GitHub calls (the GitHub-mode test uses an httptest server), x86_64 guest boot, dockerd networking beyond `--iptables=false`, and VMM memory overhead sizing under a full-memory guest.
-- **Known limits:** loopback API only (no operator authentication); runner runs as root in the guest; no image cache is shared across guests; the API `samples` field counts metric rows, not collector samples.
-- **Earlier record:** P0-ENV through INT11, L2 and D2a are accepted; D2 is parked on `park/d2`/`park/d2b`; T4 passed at 5708 s (99.846% capture). The lane branches `lane/adapter-github` and `lane/x64-setup` are integrated by cherry-pick, and `.work/wt/adapter-github` is kept only because the retire tool cannot prove patch equivalence. Pushing remains forbidden.
+- **State:** active; smolrunners, PILOT (local pilot preparation delivered; live pilot pending).
+- **Last accepted revision:** `ef9ea85` is the last explicitly recorded acceptance; later PILOT local evidence is recorded below. Integration branch green status at `800ea9c` is not recorded.
+- **Parked:** D2 on `park/d2` and `park/d2b`: the nested guest lost `/work/containerd` and then `/tmp` after data-root remount; the recorded retry has no explicit retry condition. D2a fixed the private-view prerequisite.
+- **Next:** NE-PILOT requires the owner’s x86_64 host, GitHub App key and disposable private repository; see [pilot runbook](pilot.md). X1-bench follows accepted F2, subject to the execution boundary and performance gates.
+- **Resume prompt:** “resume the roadmap” (“resume the campaign” means the same).
 
-## Charter
+## Sequence
+
+| ID | Campaign | Owned files | Prerequisites | Acceptance command |
+| --- | --- | --- | --- | --- |
+| X1-bench | smolrunners | `Makefile`, benchmark harness, `docs/measurements/` | F2 accepted; performance gates require a quiet host | `make bench` |
+
+Further ordered work, prerequisites, ownership sets and acceptance commands are retained in the campaign work breakdown. NE-PILOT and the other external qualifications are listed under Needs environment; D2 remains parked.
+
+## Campaign: smolrunners
+
+### Goal and state
+
+Active: build a self-hosted fleet manager running each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical telemetry. PILOT local preparation is delivered; live qualification remains open.
+
+### Charter
+
 
 1. Decide and keep going. Write a decision into **Decisions** only when a later slice depends on it. Log any other choice in the commit body.
 2. The owner's grant is this document. Proceed without waiting for approval within **Execution boundary**. Park any item that needs authority outside it. This plan does not supply missing permission.
@@ -29,23 +38,24 @@
    Pushing is always forbidden.
 4. Fix egregious problems you meet along the way in their own commit. They are exactly the thresholds in **Baseline → Egregious thresholds**. Record anything smaller under the item and leave it.
 5. Parity and completeness come before optimization. Performance numbers are measured and logged until phase P3. Numbers from the nested host never gate.
-6. Run slices from the disjoint ownership sets in **Sequence** in parallel, each in a worktree at `.work/wt/<item-id>`. Run everything else serially. Delegate through `orchestrate` and follow its [worktree lifecycle](/Users/josh/.claude/skills/orchestrate/SKILL.md#worktree-lifecycle) and [lane contract](/Users/josh/.claude/skills/orchestrate/references/campaigns.md#lane-contract). Lanes never edit `Cargo.toml` (root), `Cargo.lock`, `go.sum`, `sources.lock.json` or this document. They request those changes in their report and the parent applies them.
+6. Run slices from the disjoint ownership sets in **Work breakdown** in parallel, each in a worktree at `.work/wt/<item-id>`. Run everything else serially. Delegate through `orchestrate` and follow its [worktree lifecycle](/Users/josh/.claude/skills/orchestrate/SKILL.md#worktree-lifecycle) and [lane contract](/Users/josh/.claude/skills/orchestrate/references/campaigns.md#lane-contract). Lanes never edit `Cargo.toml` (root), `Cargo.lock`, `go.sum`, `sources.lock.json` or this document. They request those changes in their report and the parent applies them.
 7. After each accepted slice, on resume, and after any slice fails twice, run the [parent steering checkpoint](/Users/josh/.claude/skills/orchestrate/references/campaigns.md#parent-steering-checkpoint). Then rewrite **Status** in place. Never append logs, checkpoints or handoffs. Git history is the log.
 8. When a check fails, establish the cause before retrying (`root-cause`). Never repeat an identical failing command. Each item gets three attempts. After the third, commit the work to branch `park/<item-id>`, record the cause and retry condition in **Status**, and take the next ready item.
 9. Every commit is a Conventional Commit whose scope is the workstream: `dev`, `core`, `adapter`, `host`, `image`, `telemetry`, `api`, `web`, `cache`, `alpine` or `fleet`. The item ID goes in the body. Code comments never cite this document or its item IDs.
 10. Follow the repository `AGENTS.md` that `P0-ENV` creates, the owner's working contract, and the scratch rule: scratch goes in `.work/tmp`, with `TMPDIR` set to it. Never use `/tmp` or the system `$TMPDIR`.
 11. Never count a mock, a fake broker, a container, a macOS run or a nested-host timing as live-GitHub or native-hardware proof. Local fakes prove local logic. The matching live proof stays on **Needs environment** with a runnable command.
 
-## Decisions
 
-### Owner (2026-11-21)
+### Decisions
+
+#### Owner (2026-11-21)
 
 - **O1. No live GitHub in this campaign.** The executor makes no authenticated GitHub calls: no App, PAT, scale set, runner registration or workflow dispatch. Every gate that needs GitHub becomes a runnable `make live-*` target. Without credentials it exits 2 and names the missing input. These targets are listed in **Needs environment**. Anonymous reads of public repositories and releases, used to resolve pins, are allowed.
 - **O2. x86_64 goes on Needs environment.** The local loop and all functional gates run on a nested Debian 13 arm64 KVM host under smolvm on this M5 Mac. Native x86_64 qualification and native-performance measurement run on the owner's hosts (threadripper, lisa) through **Needs environment**. The executor does not connect to them.
 - **O3. The repository lives at `~/repos/smolrunners`.** It was moved from `~/d/smolrunners` during preflight, before any commit existed.
 - **O4. Development-environment inputs come from `laputa-systems/buildlib`.** Pinned downloads are declared in `sources.lock.json` under the [build repository contract](/Users/josh/repos/laputa-systems/stuff/docs/build-repos.md#pinned-inputs). They are fetched and verified with `buildlib.locks.fetch_input` and run through the vendored `bootstrap/buildlib-run` shim.
 
-### Prescribed
+#### Prescribed
 
 Each prescription carries its reason and what would reverse it.
 
@@ -126,7 +136,7 @@ Each prescription carries its reason and what would reverse it.
 
   *Reason:* upstream's Alpine container path rejects non-x64, and O1 applies. *Reverse:* the spike exceeds its bound (`L2`). Then record the measured blocker in `docs/compatibility.md`, keep the Alpine image and collector, and mark native-Alpine executor completion as parked.
 
-### Delegated
+#### Delegated
 
 The executor decides each of these inside its bound and logs the choice in the commit body.
 
@@ -141,9 +151,25 @@ The executor decides each of these inside its bound and logs the choice in the c
 - Error-code names. The bound: stable codes, JSON on stderr, and exit codes as `design-cli` describes.
 - The fair-offer algorithm. The bound: the ledger never promises one resource twice, a feasible profile waits at most `max_wait` (default 10 min) behind smaller ones, and idle warm capacity is the only thing reclaimed.
 
-## Baseline
+### Baseline
 
-The repository is empty, so nothing is red.
+
+- **Pilot goal:** build smolrunners, a self-hosted fleet manager that runs each GitHub Actions job in a disposable SmolVM guest on owned Linux hosts, with live and historical CPU, RAM, storage and lifecycle telemetry. Current slice (PILOT, owner request 2026-11-22): close the gaps that blocked a constrained live pilot on one x86_64 host. `docs/pilot.md` is the runbook.
+- **PILOT delivered (local evidence):**
+  - Real entry point: `serve --pilot CONFIG.toml` supervises the Go adapter, which in `--github-config` mode builds the real `actions/scaleset` client, gets or creates the scale set and opens a session. JIT configs come from `jit_request` commands (`docs/adapter-protocol.md`). The host agent delivers each config over stdin and runs the official runner through `run-job`. `make live-pilot SMOLRUNNERS_PILOT_CONFIG=…` runs it and still exits 2 without a config.
+  - One state: coordinator executions live in the API `State`, so `/api/v1/jobs`, the CLI and the UI show the running execution, its frozen limits and live samples. `jobs metrics --follow` streams one flushed line per poll until a terminal state, with no poll cap. `jobs cancel` is new. The job page polls in every non-terminal state.
+  - Acks never wait for a VM: capacity events reserve and record the execution, then ack. Per-execution workers supervise provisioning, sampling and teardown, release the reservation only after `REMOVED`, then deregister. Restart reattaches from host logs.
+  - One profile drives the guest shape, host `cpu.max`/`memory.max` (`HostAllowance` = shape + VMM overhead, the same cost the ledger reserves), and the displayed limits.
+  - Host authority state is root-only (markers, control, logs, uid claims 0700; root 0711). Per-VM SmolVM state lives under `vms/<machine>`, 0700 and owned by the VM uid.
+  - x86_64: `make pilot-bundle ARCH=x86_64` cross-builds static binaries and verified inputs; `pilot-host-setup.sh` installs them and builds the Debian rootfs on the host.
+- **Bugs found and fixed on the way:** `linux-host.sh sync` never shipped the gitignored rebuilt binaries, so **VM gate records from the history rewrite until 2026-11-22 ran stale binaries**. Other fixes: concurrent provisions shared a VM uid; storage admissions, cgroups and VM dirs leaked past teardown; the ledger reused released reservation ids after reopen; telemetry for every execution after the first failed a foreign key.
+- **Gate:** `make test-vm T=connected_job` now runs inside the nested host and observes only through the API and CLI. A: a successful job; API limits equal the guest cgroup; samples rise while busy; follow streams before completion; `kill -9` of the coordinator leaves the VM running and the same execution resumes sampling; GitHub's result settles it. B: a failed job. C: a CLI cancel. D: the official runner started by `run-job` decodes the fake JIT config. Every phase asserts the VM, cgroup, marker, uid claim, storage admission and JIT file are gone, the reservation was released and the runner was deregistered. A browser on the Mac watched an open job page update live and settle on `cancelled` without reload (manual, agent-browser).
+- **Needs environment:** NE-PILOT, the live pilot itself. On the owner's x86_64 host follow `docs/pilot.md`; this needs a GitHub App key and a disposable private repository. Not proven locally: real GitHub calls (the GitHub-mode test uses an httptest server), x86_64 guest boot, dockerd networking beyond `--iptables=false`, and VMM memory overhead sizing under a full-memory guest.
+- **Known limits:** loopback API only (no operator authentication); runner runs as root in the guest; no image cache is shared across guests; the API `samples` field counts metric rows, not collector samples.
+- **Accepted local work:** P0-ENV through INT11, L2 and D2a; T4 passed at 5708 s (99.846% capture). The pilot lanes were integrated by cherry-pick.
+
+
+At the original baseline the repository was empty and nothing was red.
 
 These timings were measured on 2026-11-21 on this M5 Mac (18 CPUs, 48 GiB, macOS 27.2).
 
@@ -166,7 +192,7 @@ These timings were measured on 2026-11-21 on this M5 Mac (18 CPUs, 48 GiB, macOS
 - an incremental `cargo build` after a one-line change takes more than 60 s;
 - any owned VM, process, disk or port survives a passing test.
 
-## Sequence
+### Work breakdown
 
 Phases run in order: P0 ground, P1 parity and completeness, P2 hardening, P3 optimization, P4 close. An item's prerequisites are written on the item. These ownership sets are disjoint and may run in parallel once their prerequisites are accepted:
 
@@ -190,13 +216,13 @@ Exceptions:
 
 The **Acceptance** column gives the command that ends the item. The narrowest affected suite also runs on the integrated tree. `make test-fast` runs `cargo test --workspace` and `go test ./...` in `adapter/`, with no VM. `make test-vm T=<name>` syncs the tree into the nested host and runs `tests/vm/<name>.sh` there.
 
-### P0 — ground
+#### P0 — ground
 
 | ID | Owns | Prereq | Work | Acceptance |
 | --- | --- | --- | --- | --- |
 | `P0-ENV` | `Makefile`, `sources.lock.json`, `bootstrap/`, `scripts/`, `.cargo/config.toml`, `rust-toolchain.toml`, root `Cargo.toml`, `adapter/go.mod`, `.gitignore`, `AGENTS.md`, `docs/development.md`, `docs/upstream-evidence.md`, `docs/architecture.md`, `docs/compatibility.md` | — | The workspace skeleton (D4) with empty crates that compile. The pinned inputs (D1, D6). `make setup`, `make fetch`, `make check`, `make test-fast` and `make test-vm`. `scripts/linux-host.sh up/sync/exec/status/down/destroy` for `sr-dev`, with state under `.work/linux-host`. `scripts/install-runtime` (D3). `scripts/x86-64-host.sh`, adapted from Niceforge's: it runs the pinned Debian 13 amd64 container with `/dev/kvm` for NE2 and is never run locally. Consumer boundary tests for `fetch-inputs.py`: wrong digest, wrong size, wrong target, truncated download, and cache reuse. `docs/upstream-evidence.md` has one row per input: SHA, date, source path, finding, evidence class, decision, and revalidation trigger. `AGENTS.md` has the commands and a verification table with warm costs. | `make check` (fetch-script tests, `cargo build`, `go build`) and `make test-vm T=smoke`. `smoke` boots a digest-pinned Alpine guest and a Debian guest through the pinned Linux runtime and leaves no `sr-*` resources. Record the timings in `AGENTS.md`. |
 
-### P1 — parity and completeness
+#### P1 — parity and completeness
 
 The oracles: the official runner and the SDK listener contract for runtime semantics, and the draft requirements in **Reference** for everything else. Each behavior row in **Acceptance** maps to a named test.
 
@@ -224,7 +250,7 @@ The oracles: the official runner and the SDK listener contract for runtime seman
 | `L1` alpine image | λ | I2, T1 | `images/alpine324`, booting with the collector, guest Docker, and the I2 Docker capabilities. | `make test-vm T=image_alpine` |
 | `L2` musl runner | λ | L1 | The D13 spike: the official Listener and Worker for `linux-musl-arm64` on .NET 10, with musl Node where host steps select it. Cross-publish `linux-musl-x64`. **Bound:** 3 attempts and 1 working session of build effort. Then record the blocker (D13 reversal). | `make test-vm T=alpine_runner`: `Runner.Listener --version` runs natively on Alpine; host-step Node runs a JS action entrypoint; `ldd` shows no glibc |
 
-### P1i — connected execution (owner steering 2026-11-21)
+#### P1i — connected execution (owner steering 2026-11-21)
 
 This milestone is inserted before further cache expansion or optimization. Component tests are not
 enough: the next acceptance must run one local fixture job through the production coordinator and
@@ -234,14 +260,14 @@ host, with trustworthy live telemetry and recovery after a coordinator restart.
 | --- | --- | --- | --- |
 | `INT1` | P1 local slices | Make the core store, ledger and lifecycle the coordinator's authoritative state; supervise the adapter and host effects from `serve`; connect live telemetry ingestion; recover an interrupted execution; repair the demonstrated protocol, observation, sizing, provenance and acceptance-binary defects that block a trustworthy connected path. | `make test-vm T=connected_job`: from a fresh source build the coordinator and host run one fixture job end to end; telemetry changes during execution; a coordinator kill/restart lets the same execution finish, tear down and release capacity; a second job runs clean. The test driver supplies only the fixture, demand and failures. **Accepted:** the coordinator is built from current source on the host and drives the nested host itself; guest-side host agent, adapter and collector remain committed binaries (see Provenance gap). |
 
-### P2 — hardening
+#### P2 — hardening
 
 | ID | Set | Prereq | Work | Acceptance |
 | --- | --- | --- | --- | --- |
 | `F1` faults | serial | all P1 | The local fault corpus: controller crash, host-agent crash, VM crash, collector failure, message redelivery, lost ack, stale JIT material, assignment expiry, a canceled queued or running job (fakebroker), clock and counter resets, storage exhaustion, WAL disk pressure, the 120-message burst, interrupted generation publication, cache connections across VM reuse, image and runner rotation with idle-capacity drain, and a restore from backup that admits nothing until every host has reconciled. | `make test-faults`: every case reports surviving durable state and owned resources; no duplicate execution; no unbounded resources; drained idle capacity retires |
 | `F2` docs | serial | F1 | `docs/architecture.md`, `docs/compatibility.md` (Debian versus `ubuntu-latest` gaps with remedies; unsupported features; Alpine status), and `docs/operations.md` (install, foreground and service-manager supervision, backup and restore, updates). The contract list in **Execution boundary** is written up. | `mdtool check docs/` |
 
-### P3 — optimization and polish
+#### P3 — optimization and polish
 
 Run P3 only after P2 is accepted. Measurements follow `benchmark-checklist` and `~/.agents/instructions/performance.md`. Results from the nested host are recorded as functional and never gate. The gating numbers are NE2 and NE5.
 
@@ -251,7 +277,7 @@ Run P3 only after P2 is accepted. Measurements follow `benchmark-checklist` and 
 | `X2-pool` | X1 | A bounded pool of independently booted, unregistered warm VMs. Each is charged its full reservation and discarded when the image or profile generation changes. | `make test-vm T=host_pool` plus the `make bench` delta |
 | `X3-seed` | X1 | Evaluate Niceforge patch 0018 (Linux storage seeds) against v1.36.0, using the fork path in D2. Adopt it only if it beats fresh raw disks on `make bench` by more than both the observed spread and 10%. | The `make bench` comparison is recorded in the measurements doc |
 
-### P4 — close
+#### P4 — close
 
 | ID | Work | Acceptance |
 | --- | --- | --- |
@@ -259,7 +285,7 @@ Run P3 only after P2 is accepted. Measurements follow `benchmark-checklist` and 
 | `Z2` review | Run `ultrareview` over the campaign diff, or the `review` skill when `ultrareview` is unavailable. Fix every priority-1 and priority-2 finding. | The review rerun reports no priority-1 or priority-2 findings |
 | `Z3` report | Rewrite **Status** with accepted features, the **Needs environment** commands still open, and owner follow-ups. | — |
 
-## Acceptance
+### Acceptance
 
 Each deliverable is local and passes on the integrated tree. Distinct success and failure conditions are kept.
 
@@ -281,7 +307,7 @@ Each deliverable is local and passes on the integrated tree. Distinct success an
 
 The full suite (`make check test-fast` plus every `tests/vm/*.sh`) runs when P1 is accepted, when P2 is accepted, and at close.
 
-## Needs environment
+### Needs environment
 
 Each `make live-*` target is implemented locally and exits 2, naming the missing input, until its environment exists. The owner runs these.
 
@@ -299,7 +325,7 @@ Each `make live-*` target is implemented locally and exits 2, naming the missing
 | NE6 | Owner, in `laputa-systems/stuff`, once smolrunners has a remote | Admit the repository to `fleet/catalog.toml`, and enroll it in `fleet/policy/buildlib.toml` with entrypoints `scripts/setup-dev` and `scripts/fetch-inputs.py` and `vendors_bootstrap = true`. | `repomod` `buildlib-usage` passes. |
 | NE7 | A host that can lose power | Pull power during a `make test-faults` acquisition burst | No acknowledged acquisition is lost (D10). |
 
-## Execution boundary and non-goals
+### Execution boundary and non-goals
 
 **Authorized:**
 - creating, editing and deleting files in this repository, and committing on `main` and lane branches;
@@ -341,9 +367,9 @@ Each `make live-*` target is implemented locally and exits 2, naming the missing
 - Firecracker or container backends;
 - the D12 deferrals.
 
-## Reference
+### Reference
 
-### Product contract
+#### Product contract
 
 - Linux hosts and Linux runners only, with the architecture explicit everywhere. SmolVM is the substrate.
 - Debian stable is the default image family. Alpine is a required second family. An Alpine container inside a Debian VM is interim and never counts as native Alpine.
@@ -358,7 +384,7 @@ Each `make live-*` target is implemented locally and exits 2, naming the missing
   - smolrunners owns capacity, profiles, VM lifetime, images, measurements, history and operator access.
 - The fleet scale-set listener (the Go adapter) and the guest's `Runner.Listener` are different components. The adapter removes no .NET component from the guest.
 
-### Persistent state
+#### Persistent state
 
 These entities are kept separate:
 
@@ -373,7 +399,7 @@ These entities are kept separate:
 
 The host keeps durable local state, so that it can clean up its own VMs after a restart.
 
-### Lifecycle
+#### Lifecycle
 
 Executions move through these states: reserved, provisioning, guest-ready, registering, idle, busy, finalizing, terminating and removed, plus failed or uncertain observations. The normal path:
 
@@ -397,7 +423,7 @@ Rules that hold throughout:
 - GitHub App credentials stay in the coordinator and adapter. Guests receive only short-lived material.
 - Record the runner's bundled .NET target. v2.338.2 targets .NET 8, which went out of support on 2026-11-10, and the .NET 10 PR #4757 is still open.
 
-### Docker corpus
+#### Docker corpus
 
 1. Shell `docker run` with registry push and pull.
 2. BuildKit and Buildx with cache.
@@ -410,7 +436,7 @@ Rules that hold throughout:
 
 Never mount the host's Docker socket. Never route job Docker commands to SmolVM's host Docker Engine API. Prefer the virtio-net profile. Disable automatic port publication. Inspect the selected image store rather than assuming `overlay2`.
 
-### Telemetry semantics
+#### Telemetry semantics
 
 - **Scopes:** guest/VM (CPU per vCPU, MemTotal and MemAvailable and memory breakdown, swap, PSI, OOM, disk and network), job workload (cgroup CPU and quota, memory current, peak and events, descendants including Docker services), and physical host (VMM cgroup CPU and memory, host pressure and contention).
 - CPU is shown as cores used and as percent of allocated vCPUs, with busy time, iowait, steal and throttling kept separate. The host model is recorded.
@@ -418,7 +444,7 @@ Never mount the host's Docker socket. Never route job Docker commands to SmolVM'
 - Guest metrics from privileged jobs are diagnostic and never grant capacity.
 - Workflow logs come from GitHub. Infrastructure, guest diagnostic and workflow logs are kept separate, and nothing collects environment dumps.
 
-### Sizing
+#### Sizing
 
 - Group comparable runs by repository, workflow and job, matrix, image, executor and profile revision, hardware class and cache state. Include failures and OOMs.
 - State the observation, the proposal, the confidence, and what would falsify it.
@@ -427,7 +453,7 @@ Never mount the host's Docker socket. Never route job Docker commands to SmolVM'
 - Label allocated and consumed integrals separately.
 - Changes never resize active jobs.
 
-### CLI
+#### CLI
 
 ```text
 init, doctor
@@ -442,7 +468,7 @@ jobs list/inspect/top/metrics --follow --json/logs --follow/explain/report --for
 
 Every mutating command shows its scope and has noninteractive flags. `jobs debug` is authenticated, time-bounded and VM-scoped.
 
-### Prior art
+#### Prior art
 
 Patterns only. Licenses are preserved per path.
 
@@ -464,3 +490,7 @@ Patterns only. Licenses are preserved per path.
   | Patches | `third_party/patches/0017-smolvm-guest-usage.patch`, `third_party/patches/0018-smolvm-linux-pack-storage-seeds.patch` |
 
   Do not copy its 15 s cadence, its 256-sample cutoff, rates computed from controller timing, or its 500 ms lease.
+
+## Later
+
+- D12: reconsider deferred features only on owner request; no ticket IDs recorded.

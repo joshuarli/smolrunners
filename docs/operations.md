@@ -2,7 +2,7 @@
 
 This document describes the local, nested-host deployment used by the campaign. It is not a
 production installation guide: live GitHub enrollment and native-hardware qualification remain
-external prerequisites (see `smolrunners-campaign.md`, **Needs environment**).
+external prerequisites (see `docs/roadmap.md`, **Needs environment**).
 
 ## Install
 

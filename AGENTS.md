@@ -1,6 +1,6 @@
 # smolrunners repository instructions
 
-Follow the owner's working contract and `smolrunners-campaign.md`. Scratch goes in `.work/tmp` with
+Follow the owner's working contract and `docs/roadmap.md` and its Status. Scratch goes in `.work/tmp` with
 `TMPDIR` set to it. Never use `/tmp` or the system `$TMPDIR`. No formatter is configured.
 
 ## Commands

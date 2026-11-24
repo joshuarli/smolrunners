@@ -25,7 +25,7 @@ gaps already established from pinned inputs and local evidence are:
 | x86_64 image and runner behavior. | Pinned x86_64 inputs are fetched but unqualified locally. | Native x86_64 host qualification. | NE2. |
 | Full Docker networking and overlayfs parity in the Alpine container path. | `image_alpine.sh` proves boot, collection and a simple container with `vfs` and iptables disabled. | Separate DinD/network parity evidence. | Local gap. |
 
-Unsupported features are the D12 deferrals in `smolrunners-campaign.md`: the transparent cache v2
+Unsupported features are the D12 deferrals in `docs/roadmap.md`: the transparent cache v2
 adapter, a lean replacement executor, live resizing, RAM forks, cross-host cache replication,
 remote builders, lazy image formats, the enhanced checkout action, on-demand code-level profiling,
 and OTLP/Prometheus export.
